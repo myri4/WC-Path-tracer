@@ -4,6 +4,7 @@
 #pragma warning( disable : 4702) // Disable unreachable code
 #define GLFW_INCLUDE_NONE
 //#define GLM_FORCE_PURE
+#define GLM_ENABLE_EXPERIMENTAL
 #define GLM_FORCE_CTOR_INIT
 #define GLM_FORCE_SILENT_WARNINGS
 #include "Scene.h"

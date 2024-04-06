@@ -1,5 +1,6 @@
 #pragma once
 #include <glm/glm.hpp>
+#include <glm/gtx/compatibility.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <memory>
@@ -13,7 +14,7 @@ struct Ray
 
 inline float RandomValue()
 {
-    static std::uniform_real_distribution<float> distribution(0.0, 1.0);
+    static std::uniform_real_distribution<float> distribution(0.f, 1.f);
     static std::mt19937 generator;
     return distribution(generator);
 }
@@ -109,8 +110,7 @@ struct Lambertian : public Material
     Lambertian(glm::vec3 a) : albedo(a) {}
     bool scatter(const Ray& ray, const HitRecord& rec, glm::vec3& attenuation, Ray& scattered) const override 
     {
-        auto scatter_direction = rec.normal + RandomUnitVector();
-        scattered = Ray(rec.p, scatter_direction);
+        scattered = Ray(rec.p, glm::normalize(rec.normal + RandomUnitVector()));
         attenuation = albedo;
         return true;
     }
@@ -120,17 +120,18 @@ struct Lambertian : public Material
 
 struct Metal : public Material 
 {
-    Metal(glm::vec3 a, float r) : albedo(a), roughness(r) {}
+    Metal(glm::vec3 a, float r, float sp) : albedo(a), roughness(r), specularProbability(sp) {}
     bool scatter(const Ray& ray, const HitRecord& rec, glm::vec3& attenuation, Ray& scattered) const override 
     {
-        glm::vec3 reflected = glm::reflect(ray.Direction, rec.normal);
-        scattered = Ray(rec.p, reflected + roughness * RandomUnitVector());
-        attenuation = albedo;
+        bool isSpecularBounce = specularProbability >= RandomValue();
+        scattered = Ray(rec.p, glm::normalize(glm::reflect(ray.Direction, rec.normal) + (roughness * isSpecularBounce) * RandomUnitVector()));
+        attenuation = glm::lerp(albedo, glm::vec3(1.f), (float)isSpecularBounce);
         return true;
     }
 
     glm::vec3 albedo;
     float roughness;
+    float specularProbability;
 };
 
 float reflectance(float cosine, float ref_idx) // Use Schlick's approximation for reflectance.
@@ -161,7 +162,7 @@ struct Dielectric : public Material
         else
             direction = glm::refract(ray.Direction, rec.normal, refraction_ratio);
 
-        scattered = Ray(rec.p, direction);
+        scattered = Ray(rec.p, glm::normalize(direction));
         return true;
     }
 

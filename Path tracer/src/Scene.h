@@ -28,8 +28,8 @@ struct Camera
 struct Scene
 {
     Camera camera;
-    uint32_t Samples = 500;
-    uint32_t Depth = 10;
+    uint32_t Samples = 10;
+    uint32_t Depth = 5;
 
     std::vector<Sphere> Spheres;
 
@@ -37,8 +37,8 @@ struct Scene
     {
         auto Ground = std::make_shared<Lambertian>(glm::vec3(0.8, 0.8, 0.0));
         auto Center = std::make_shared<Lambertian>(glm::vec3(0.7, 0.3, 0.3));
-        auto Left = std::make_shared<Metal>(glm::vec3(0.8, 0.8, 0.8), 0.f);
-        auto Right = std::make_shared<Metal>(glm::vec3(0.8, 0.6, 0.2), 0.75f);
+        auto Left = std::make_shared<Metal>(glm::vec3(0.8, 0.8, 0.8), 0.f, 0.4f);
+        auto Right = std::make_shared<Metal>(glm::vec3(0.8, 0.6, 0.2), 0.75f, 0.02f);
 
 
         auto glass = std::make_shared<Dielectric>(1.5f);
@@ -56,14 +56,14 @@ struct Scene
     {
         HitRecord temp_rec;
         bool hit_anything = false;
-        float closest_so_far = 150.f;
+        float t = 150.f;
 
         for (const auto& object : Spheres)
         {
-            if (object.Intersect(ray, 0.001f, closest_so_far, temp_rec))
+            if (object.Intersect(ray, 0.001f, t, temp_rec))
             {
                 hit_anything = true;
-                closest_so_far = temp_rec.t;
+                t = temp_rec.t;
                 rec = temp_rec;
             }
         }
@@ -115,7 +115,7 @@ struct Scene
                 coord.y = 1.f - coord.y;
                 coord = coord * 2.f - 1.f; // -1 -> 1
                 glm::vec4 target = camera.InverseProjection * glm::vec4(coord.x, coord.y, 1, 1);
-                glm::vec3 rayDirection = glm::vec3(camera.View * glm::vec4(glm::normalize(glm::vec3(target) / target.w), 0));
+                glm::vec3 rayDirection = glm::vec3(camera.View * glm::vec4(glm::normalize(glm::vec3(target) / target.w), 0.f));
 
                 glm::vec3 result;
 
