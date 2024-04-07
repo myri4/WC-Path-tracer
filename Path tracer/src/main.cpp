@@ -3,6 +3,7 @@
 #pragma warning( push )
 #pragma warning( disable : 4702) // Disable unreachable code
 #define GLFW_INCLUDE_NONE
+#define _SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING
 //#define GLM_FORCE_PURE
 #define GLM_ENABLE_EXPERIMENTAL
 #define GLM_FORCE_CTOR_INIT

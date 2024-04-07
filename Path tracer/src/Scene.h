@@ -32,16 +32,30 @@ struct Scene
     uint32_t Depth = 5;
 
     std::vector<Sphere> Spheres;
+    std::vector<Material> Materials;
+
+    MaterialID PushMaterial()
+    {
+        Materials.push_back(Material());
+        return Materials.size() - 1;
+    }
 
     void Create()
     {
-        auto Ground = std::make_shared<Lambertian>(glm::vec3(0.8, 0.8, 0.0));
-        auto Center = std::make_shared<Lambertian>(glm::vec3(0.7, 0.3, 0.3));
-        auto Left = std::make_shared<DiffuseLight>(glm::vec3(0.8, 0.8, 0.8) * 2.f);
-        auto Right = std::make_shared<Metal>(glm::vec3(0.8, 0.6, 0.2), 0.75f, 0.02f);
+        auto Ground = PushMaterial();
+        Materials[Ground].SetLambertian(glm::vec3(0.8, 0.8, 0.0));
 
+        auto Center = PushMaterial();
+        Materials[Center].SetLambertian(glm::vec3(0.7, 0.3, 0.3));
 
-        auto glass = std::make_shared<Dielectric>(glm::vec3(0.f, 0.5f, 05.f), 0.07f, 1.5f);
+        auto Left = PushMaterial();
+        Materials[Left].SetDiffuseLight(glm::vec3(0.8, 0.8, 0.8) * 2.f);
+
+        auto Right = PushMaterial();
+        Materials[Right].SetMetal(glm::vec3(0.8, 0.6, 0.2), 0.75f, 0.02f);
+
+        auto glass = PushMaterial();
+        Materials[glass].SetDielectric(glm::vec3(0.f, 0.5f, 05.f), 0.07f, 1.5f);
 
         //Spheres.push_back(Sphere(glm::vec3(0.f, 0.f, -1.f), 0.5f));
         //Spheres.push_back(Sphere(glm::vec3(0.f, -100.5f, -1.f), 100.f));
@@ -75,21 +89,39 @@ struct Scene
     {
         if (depth == 0) return glm::vec3(0.f);
 
-        for (auto& s : Spheres)
+        HitRecord rec;
+        if (!Intersect(ray, rec))
+            return glm::vec3(0.f);// glm::mix(glm::vec3(1.f), glm::vec3(0.5f, 0.7f, 1.f), 0.5f * (ray.Direction.y + 1.f));
+
+        Ray scattered;
+        glm::vec3 attenuation;
+        glm::vec3 emmission = Materials[rec.material].emission;
+        if (!Materials[rec.material].scatter(ray, rec, attenuation, scattered))
+            return emmission;
+
+        return emmission + attenuation * TraceRay(scattered, depth - 1);
+    }
+
+    glm::vec3 TraceRay2(Ray ray)
+    {
+        glm::vec3 incomingLight = glm::vec3(0.f);
+        glm::vec3 rayColor = glm::vec3(1.f);
+
+        for (uint32_t i = 0; i < Depth; i++)
         {
             HitRecord rec;
             if (!Intersect(ray, rec))
                 return glm::vec3(0.f);// glm::mix(glm::vec3(1.f), glm::vec3(0.5f, 0.7f, 1.f), 0.5f * (ray.Direction.y + 1.f));
 
-            Ray scattered;
             glm::vec3 attenuation;
-            glm::vec3 emmission = rec.material->emitted(0.f, 0.f, rec.p);
-            if (!rec.material->scatter(ray, rec, attenuation, scattered))
-                return emmission;
+            glm::vec3 emmission = Materials[rec.material].emission;
+            Materials[rec.material].scatter(ray, rec, attenuation, ray);
 
-            return emmission + attenuation * TraceRay(scattered, depth - 1);
+            incomingLight += emmission * rayColor;
+            rayColor *= attenuation;
         }
-        return glm::vec3(0.f);
+
+        return incomingLight;
     }
 
     glm::vec3 Tonemap_ACES(glm::vec3 x)
@@ -122,7 +154,7 @@ struct Scene
                 glm::vec3 result;
 
                 for (int sample = 0; sample < Samples; sample++) 
-                    result += TraceRay(Ray(camera.Position, rayDirection), Depth);
+                    result += TraceRay2(Ray(camera.Position, rayDirection));
                 
                 result /= Samples;
                 result = pow(result, glm::vec3(1.f / 2.2f));

@@ -53,6 +53,7 @@ inline glm::vec3 RandomOnHemisphere(const glm::vec3& normal)
 }
 
 struct Material;
+using MaterialID = uint32_t;
 
 struct HitRecord
 {
@@ -60,7 +61,7 @@ struct HitRecord
     glm::vec3 normal;
     float t;
     bool front;
-    std::shared_ptr<Material> material;
+    MaterialID material;
 };
 
 struct Sphere
@@ -97,50 +98,15 @@ struct Sphere
 
     glm::vec3 Position;
     float Radius;
-    std::shared_ptr<Material> Material;
+    MaterialID Material;
 };
 
-struct Material 
+enum class MaterialType
 {
-    glm::vec3 albedo;
-
-    virtual bool scatter(const Ray& ray, const HitRecord& rec, glm::vec3& attenuation, Ray& scattered) const = 0;
-    virtual glm::vec3 emitted(float u, float v, const glm::vec3& p) const = 0;
-};
-
-struct Lambertian : public Material 
-{
-    Lambertian(glm::vec3 a) { albedo = a; }
-    bool scatter(const Ray& ray, const HitRecord& rec, glm::vec3& attenuation, Ray& scattered) const override 
-    {
-        scattered = Ray(rec.p, glm::normalize(rec.normal + RandomUnitVector()));
-        attenuation = albedo;
-        return true;
-    }
-
-    glm::vec3 emitted(float u, float v, const glm::vec3& p) const override { return glm::vec3(0.f); }
-};
-
-struct Metal : public Material 
-{
-    Metal(glm::vec3 a, float r, float sp) 
-    {
-        albedo = a;
-        roughness = r;
-        specularProbability = sp;
-    }
-    bool scatter(const Ray& ray, const HitRecord& rec, glm::vec3& attenuation, Ray& scattered) const override 
-    {
-        bool isSpecularBounce = specularProbability >= RandomValue();
-        scattered = Ray(rec.p, glm::normalize(glm::reflect(ray.Direction, rec.normal) + (roughness * isSpecularBounce) * RandomUnitVector()));
-        attenuation = glm::lerp(albedo, glm::vec3(1.f), (float)isSpecularBounce);
-        return true;
-    }
-
-    glm::vec3 emitted(float u, float v, const glm::vec3& p) const override { return glm::vec3(0.f); }
-
-    float roughness;
-    float specularProbability;
+    Lambertian,
+    Metal,
+    Dielectric,
+    DiffuseLight
 };
 
 float reflectance(float cosine, float ref_idx) // Use Schlick's approximation for reflectance.
@@ -150,49 +116,77 @@ float reflectance(float cosine, float ref_idx) // Use Schlick's approximation fo
     return r0 + (1.f - r0) * pow(1.f - cosine, 5.f);
 }
 
-struct Dielectric : public Material 
+struct Material 
 {
-    Dielectric(glm::vec3 color, float r, float index_of_refraction) 
+    Material() = default;
+    glm::vec3 albedo = glm::vec3(0.f);
+    glm::vec3 emission = glm::vec3(0.f);
+
+    float specularProbability = 0.f;
+    float roughness = 0.f;
+    float ior = 1.f;
+    MaterialType type = MaterialType::Lambertian;
+
+    bool scatter(const Ray& ray, const HitRecord& rec, glm::vec3& attenuation, Ray& scattered)
+    {
+        switch (type)
+        {
+        case MaterialType::Lambertian:
+        {
+            scattered = Ray(rec.p, glm::normalize(rec.normal + RandomUnitVector()));
+            attenuation = albedo;
+            return true;
+        }
+        case MaterialType::Metal:
+        {
+            bool isSpecularBounce = specularProbability >= RandomValue();
+            scattered = Ray(rec.p, glm::normalize(glm::reflect(ray.Direction, rec.normal) + (roughness * isSpecularBounce) * RandomUnitVector()));
+            attenuation = glm::lerp(albedo, glm::vec3(1.f), (float)isSpecularBounce);
+            return true;
+        }
+        case MaterialType::Dielectric:
+        {
+            attenuation = albedo;
+            float refraction_ratio = rec.front ? (1.f / ior) : ior;
+
+            float cos_theta = glm::min(dot(-ray.Direction, rec.normal), 1.f);
+            float sin_theta = sqrt(1.f - cos_theta * cos_theta);
+
+            bool cannot_refract = refraction_ratio * sin_theta > 1.0;
+            glm::vec3 direction;
+
+            if (cannot_refract || reflectance(cos_theta, refraction_ratio) > RandomValue())
+                direction = glm::reflect(ray.Direction, rec.normal);
+            else
+                direction = glm::refract(ray.Direction, rec.normal, refraction_ratio);
+
+            scattered = Ray(rec.p, glm::normalize(direction + roughness * RandomUnitVector()));
+            return true;
+        }
+        case MaterialType::DiffuseLight:
+            return false;
+        default:
+            return false;
+        }
+    }
+
+    void SetLambertian(glm::vec3 a) { type = MaterialType::Lambertian; albedo = a; }
+
+    void SetMetal(glm::vec3 a, float r, float sp)
+    {
+        albedo = a;
+        roughness = r;
+        specularProbability = sp;
+        type = MaterialType::Metal;
+    }
+
+    void SetDielectric(glm::vec3 color, float r, float index_of_refraction)
     {
         albedo = color;
         roughness = r;
         ior = index_of_refraction;
+        type = MaterialType::Dielectric;
     }
 
-    bool scatter(const Ray& ray, const HitRecord& rec, glm::vec3& attenuation, Ray& scattered) const override 
-    {
-        attenuation = albedo;
-        float refraction_ratio = rec.front ? (1.f / ior) : ior;
-
-
-        float cos_theta = glm::min(dot(-ray.Direction, rec.normal), 1.f);
-        float sin_theta = sqrt(1.f - cos_theta * cos_theta);
-
-        bool cannot_refract = refraction_ratio * sin_theta > 1.0;
-        glm::vec3 direction;
-
-        if (cannot_refract || reflectance(cos_theta, refraction_ratio) > RandomValue())
-            direction = glm::reflect(ray.Direction, rec.normal);
-        else
-            direction = glm::refract(ray.Direction, rec.normal, refraction_ratio);
-
-        scattered = Ray(rec.p, glm::normalize(direction + roughness * RandomUnitVector()));
-        return true;
-    }
-
-    glm::vec3 emitted(float u, float v, const glm::vec3& p) const override { return glm::vec3(0.f); }
-
-    float roughness = 0.f;
-    float ior = 1.f;
-};
-
-struct DiffuseLight : public Material 
-{
-    DiffuseLight(glm::vec3 c) : color(c) {}
-
-    bool scatter(const Ray& ray, const HitRecord& rec, glm::vec3& attenuation, Ray& scattered) const override { return false; }
-
-    glm::vec3 emitted(float u, float v, const glm::vec3& p) const override { return color; }
-
-    glm::vec3 color;
+    void SetDiffuseLight(glm::vec3 c) { type = MaterialType::DiffuseLight; emission = c; }
 };
