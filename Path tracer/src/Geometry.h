@@ -102,12 +102,15 @@ struct Sphere
 
 struct Material 
 {
+    glm::vec3 albedo;
+
     virtual bool scatter(const Ray& ray, const HitRecord& rec, glm::vec3& attenuation, Ray& scattered) const = 0;
+    virtual glm::vec3 emitted(float u, float v, const glm::vec3& p) const = 0;
 };
 
 struct Lambertian : public Material 
 {
-    Lambertian(glm::vec3 a) : albedo(a) {}
+    Lambertian(glm::vec3 a) { albedo = a; }
     bool scatter(const Ray& ray, const HitRecord& rec, glm::vec3& attenuation, Ray& scattered) const override 
     {
         scattered = Ray(rec.p, glm::normalize(rec.normal + RandomUnitVector()));
@@ -115,12 +118,17 @@ struct Lambertian : public Material
         return true;
     }
 
-    glm::vec3 albedo;
+    glm::vec3 emitted(float u, float v, const glm::vec3& p) const override { return glm::vec3(0.f); }
 };
 
 struct Metal : public Material 
 {
-    Metal(glm::vec3 a, float r, float sp) : albedo(a), roughness(r), specularProbability(sp) {}
+    Metal(glm::vec3 a, float r, float sp) 
+    {
+        albedo = a;
+        roughness = r;
+        specularProbability = sp;
+    }
     bool scatter(const Ray& ray, const HitRecord& rec, glm::vec3& attenuation, Ray& scattered) const override 
     {
         bool isSpecularBounce = specularProbability >= RandomValue();
@@ -129,7 +137,8 @@ struct Metal : public Material
         return true;
     }
 
-    glm::vec3 albedo;
+    glm::vec3 emitted(float u, float v, const glm::vec3& p) const override { return glm::vec3(0.f); }
+
     float roughness;
     float specularProbability;
 };
@@ -143,11 +152,16 @@ float reflectance(float cosine, float ref_idx) // Use Schlick's approximation fo
 
 struct Dielectric : public Material 
 {
-    Dielectric(float index_of_refraction) : ior(index_of_refraction) {}
+    Dielectric(glm::vec3 color, float r, float index_of_refraction) 
+    {
+        albedo = color;
+        roughness = r;
+        ior = index_of_refraction;
+    }
 
     bool scatter(const Ray& ray, const HitRecord& rec, glm::vec3& attenuation, Ray& scattered) const override 
     {
-        attenuation = glm::vec3(1.f);
+        attenuation = albedo;
         float refraction_ratio = rec.front ? (1.f / ior) : ior;
 
 
@@ -162,9 +176,23 @@ struct Dielectric : public Material
         else
             direction = glm::refract(ray.Direction, rec.normal, refraction_ratio);
 
-        scattered = Ray(rec.p, glm::normalize(direction));
+        scattered = Ray(rec.p, glm::normalize(direction + roughness * RandomUnitVector()));
         return true;
     }
 
-    float ior;
+    glm::vec3 emitted(float u, float v, const glm::vec3& p) const override { return glm::vec3(0.f); }
+
+    float roughness = 0.f;
+    float ior = 1.f;
+};
+
+struct DiffuseLight : public Material 
+{
+    DiffuseLight(glm::vec3 c) : color(c) {}
+
+    bool scatter(const Ray& ray, const HitRecord& rec, glm::vec3& attenuation, Ray& scattered) const override { return false; }
+
+    glm::vec3 emitted(float u, float v, const glm::vec3& p) const override { return color; }
+
+    glm::vec3 color;
 };

@@ -28,7 +28,7 @@ struct Camera
 struct Scene
 {
     Camera camera;
-    uint32_t Samples = 10;
+    uint32_t Samples = 100;
     uint32_t Depth = 5;
 
     std::vector<Sphere> Spheres;
@@ -37,11 +37,11 @@ struct Scene
     {
         auto Ground = std::make_shared<Lambertian>(glm::vec3(0.8, 0.8, 0.0));
         auto Center = std::make_shared<Lambertian>(glm::vec3(0.7, 0.3, 0.3));
-        auto Left = std::make_shared<Metal>(glm::vec3(0.8, 0.8, 0.8), 0.f, 0.4f);
+        auto Left = std::make_shared<DiffuseLight>(glm::vec3(0.8, 0.8, 0.8) * 2.f);
         auto Right = std::make_shared<Metal>(glm::vec3(0.8, 0.6, 0.2), 0.75f, 0.02f);
 
 
-        auto glass = std::make_shared<Dielectric>(1.5f);
+        auto glass = std::make_shared<Dielectric>(glm::vec3(0.f, 0.5f, 05.f), 0.07f, 1.5f);
 
         //Spheres.push_back(Sphere(glm::vec3(0.f, 0.f, -1.f), 0.5f));
         //Spheres.push_back(Sphere(glm::vec3(0.f, -100.5f, -1.f), 100.f));
@@ -78,16 +78,18 @@ struct Scene
         for (auto& s : Spheres)
         {
             HitRecord rec;
-            if (Intersect(ray, rec))
-            {
-                Ray scattered;
-                glm::vec3 attenuation;
-                if (rec.material->scatter(ray, rec, attenuation, scattered))
-                    return attenuation * TraceRay(scattered, depth - 1);
-                return glm::vec3(0.f);
-            }
+            if (!Intersect(ray, rec))
+                return glm::vec3(0.f);// glm::mix(glm::vec3(1.f), glm::vec3(0.5f, 0.7f, 1.f), 0.5f * (ray.Direction.y + 1.f));
+
+            Ray scattered;
+            glm::vec3 attenuation;
+            glm::vec3 emmission = rec.material->emitted(0.f, 0.f, rec.p);
+            if (!rec.material->scatter(ray, rec, attenuation, scattered))
+                return emmission;
+
+            return emmission + attenuation * TraceRay(scattered, depth - 1);
         }
-        return glm::mix(glm::vec3(1.f), glm::vec3(0.5f, 0.7f, 1.f), 0.5f * (ray.Direction.y + 1.f));
+        return glm::vec3(0.f);
     }
 
     glm::vec3 Tonemap_ACES(glm::vec3 x)
@@ -124,7 +126,7 @@ struct Scene
                 
                 result /= Samples;
                 result = pow(result, glm::vec3(1.f / 2.2f));
-                //result = Tonemap_ACES(result);
+                result = Tonemap_ACES(result);
                 image.Set(x, y, glm::vec4(result, 1.f) * 255.f);
             }
         }
