@@ -55,7 +55,7 @@ inline glm::vec3 RandomOnHemisphere(const glm::vec3& normal)
 struct Material;
 using MaterialID = uint32_t;
 
-struct HitRecord
+struct HitInfo
 {
     glm::vec3 p;
     glm::vec3 normal;
@@ -66,7 +66,7 @@ struct HitRecord
 
 struct Sphere
 {
-    bool Intersect(const Ray& ray, float tmin, float tmax, HitRecord& rec) const
+    bool Intersect(const Ray& ray, float tmin, float tmax, HitInfo& rec) const
     {
         glm::vec3 oc = ray.Origin - Position;
         float a = glm::dot(ray.Direction, ray.Direction);
@@ -74,7 +74,7 @@ struct Sphere
         float c = glm::dot(oc, oc) - Radius * Radius;
 
         float discriminant = half_b * half_b - a * c;
-        if (discriminant < 0) return false;
+        if (discriminant < 0.f) return false;
         float sqrtd = sqrt(discriminant);
 
         // Find the nearest root that lies in the acceptable range.
@@ -127,7 +127,7 @@ struct Material
     float ior = 1.f;
     MaterialType type = MaterialType::Lambertian;
 
-    bool scatter(const Ray& ray, const HitRecord& rec, glm::vec3& attenuation, Ray& scattered)
+    bool scatter(const Ray& ray, const HitInfo& rec, glm::vec3& attenuation, Ray& scattered)
     {
         switch (type)
         {

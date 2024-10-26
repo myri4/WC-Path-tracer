@@ -8,6 +8,8 @@
 
 #include "Geometry.h"
 
+#include <wc/Utils/Time.h>
+
 struct Camera
 {
     glm::vec3 Position;
@@ -28,11 +30,13 @@ struct Camera
 struct Scene
 {
     Camera camera;
-    uint32_t Samples = 100;
+    uint32_t Samples = 10;
     uint32_t Depth = 5;
 
     std::vector<Sphere> Spheres;
     std::vector<Material> Materials;
+
+    wc::CPUImage image;
 
     MaterialID PushMaterial()
     {
@@ -40,35 +44,9 @@ struct Scene
         return Materials.size() - 1;
     }
 
-    void Create()
+    bool Intersect(const Ray& ray, HitInfo& rec)
     {
-        auto Ground = PushMaterial();
-        Materials[Ground].SetLambertian(glm::vec3(0.8, 0.8, 0.0));
-
-        auto Center = PushMaterial();
-        Materials[Center].SetLambertian(glm::vec3(0.7, 0.3, 0.3));
-
-        auto Left = PushMaterial();
-        Materials[Left].SetDiffuseLight(glm::vec3(0.8, 0.8, 0.8) * 2.f);
-
-        auto Right = PushMaterial();
-        Materials[Right].SetMetal(glm::vec3(0.8, 0.6, 0.2), 0.75f, 0.02f);
-
-        auto glass = PushMaterial();
-        Materials[glass].SetDielectric(glm::vec3(0.f, 0.5f, 05.f), 0.07f, 1.5f);
-
-        //Spheres.push_back(Sphere(glm::vec3(0.f, 0.f, -1.f), 0.5f));
-        //Spheres.push_back(Sphere(glm::vec3(0.f, -100.5f, -1.f), 100.f));
-
-        Spheres.push_back(Sphere(glm::vec3(0.0, 0.0, -1.0), 0.5, glass));
-        Spheres.push_back(Sphere(glm::vec3(-1.0, 0.0, -1.0), 0.5, Left));
-        Spheres.push_back(Sphere(glm::vec3(1.0, 0.0, -1.0), 0.5, Right));
-        Spheres.push_back(Sphere(glm::vec3(0.f, -100.5f, -1.f), 100.f, Ground));
-    }
-
-    bool Intersect(const Ray& ray, HitRecord& rec)
-    {
-        HitRecord temp_rec;
+        HitInfo temp_rec;
         bool hit_anything = false;
         float t = 150.f;
 
@@ -85,11 +63,11 @@ struct Scene
         return hit_anything;
     }
 
-    glm::vec3 TraceRay(const Ray& ray, uint32_t depth)
+    glm::vec3 TraceRay2(const Ray& ray, uint32_t depth)
     {
         if (depth == 0) return glm::vec3(0.f);
 
-        HitRecord rec;
+        HitInfo rec;
         if (!Intersect(ray, rec))
             return glm::vec3(0.f);// glm::mix(glm::vec3(1.f), glm::vec3(0.5f, 0.7f, 1.f), 0.5f * (ray.Direction.y + 1.f));
 
@@ -99,25 +77,25 @@ struct Scene
         if (!Materials[rec.material].scatter(ray, rec, attenuation, scattered))
             return emmission;
 
-        return emmission + attenuation * TraceRay(scattered, depth - 1);
+        return emmission + attenuation * TraceRay2(scattered, depth - 1);
     }
 
-    glm::vec3 TraceRay2(Ray ray)
+    glm::vec3 TraceRay(Ray ray)
     {
         glm::vec3 incomingLight = glm::vec3(0.f);
         glm::vec3 rayColor = glm::vec3(1.f);
 
-        for (uint32_t i = 0; i < Depth; i++)
+        for (uint32_t i = 0; i <= Depth; i++)
         {
-            HitRecord rec;
+            HitInfo rec;
             if (!Intersect(ray, rec))
                 return glm::vec3(0.f);// glm::mix(glm::vec3(1.f), glm::vec3(0.5f, 0.7f, 1.f), 0.5f * (ray.Direction.y + 1.f));
 
             glm::vec3 attenuation;
-            glm::vec3 emmission = Materials[rec.material].emission;
-            Materials[rec.material].scatter(ray, rec, attenuation, ray);
+            if (!Materials[rec.material].scatter(ray, rec, attenuation, ray)) 
+                return incomingLight + Materials[rec.material].emission * rayColor;
 
-            incomingLight += emmission * rayColor;
+            incomingLight += Materials[rec.material].emission * rayColor;
             rayColor *= attenuation;
         }
 
@@ -137,9 +115,6 @@ struct Scene
 
     void Render()
     {
-        wc::CPUImage image;
-        image.Allocate(400, 225, 3);
-
         camera.Update();
         for (uint32_t y = 0; y < image.Height; y++)
         {
@@ -153,16 +128,14 @@ struct Scene
 
                 glm::vec3 result;
 
-                for (int sample = 0; sample < Samples; sample++) 
-                    result += TraceRay2(Ray(camera.Position, rayDirection));
-                
+                for (int sample = 0; sample < Samples; sample++)
+                    result += TraceRay(Ray(camera.Position, rayDirection));
+
                 result /= Samples;
                 result = pow(result, glm::vec3(1.f / 2.2f));
                 result = Tonemap_ACES(result);
                 image.Set(x, y, glm::vec4(result, 1.f) * 255.f);
             }
         }
-
-        image.Save("output.png");
     }
 };
