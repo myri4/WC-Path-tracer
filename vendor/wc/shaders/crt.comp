@@ -1,0 +1,61 @@
+#pragma shader_stage(compute)
+
+layout(local_size_x = 4, local_size_y = 4) in;
+layout(binding = 0, rgba32f) restrict writeonly uniform image2D o_Image;
+
+layout(binding = 1) uniform sampler2D finalTexture;
+
+layout (push_constant) uniform Uniforms
+{
+    // Settings
+    float time;
+	uint CRT;
+	uint Vignete;
+	float Brighness;
+};
+
+const float bend = 4.f;
+vec2 crt(vec2 coord)
+{
+	// put in symmetrical coords
+	coord = (coord - 0.5) * 2.0;
+
+	//coord *= 1.1;	
+
+	// deform coords
+	coord.x *= 1.f + pow((abs(coord.y) / bend), 2.f);
+	coord.y *= 1.f + pow((abs(coord.x) / bend), 2.f);
+
+	coord  = (coord / 2.f) + 0.5;
+	coord =  coord * 0.92 + 0.04;
+
+	return coord;
+}
+
+void main() 
+{ 
+	vec2 imgSize = vec2(imageSize(o_Image));
+	ivec2 invocID = ivec2(gl_GlobalInvocationID);  
+	vec2 uv = vec2(float(invocID.x) / imgSize.x, float(invocID.y) / imgSize.y);
+	vec2 texCoords = uv;
+	texCoords += (1.f / imgSize) * 0.5f;
+	if (CRT == 1) texCoords = crt(texCoords);
+	
+	vec3 result = texture(finalTexture, texCoords).rgb;
+	
+	if (CRT == 1)
+	{
+		vec2 screenSpace = texCoords * imgSize;
+		result.rgb -= sin((screenSpace.y + (time * 29.0))) * 0.02; // scanline	
+	}
+
+	if (Vignete == 1)
+	{
+		vec2 V  = 1.f - 2.f * uv;  
+		result *= 1.25f * vec3(1.f - smoothstep(0.1f, 1.8f, length(V * V))); // vigneting
+	}
+
+	result.rgb *= Brighness;
+
+	imageStore(o_Image, invocID, vec4(result, 1.f));
+}

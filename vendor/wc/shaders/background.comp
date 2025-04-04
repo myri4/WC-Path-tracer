@@ -1,0 +1,24 @@
+#pragma shader_stage(compute)
+
+layout(local_size_x = 4, local_size_y = 4) in;
+layout(binding = 0, rgba32f) restrict writeonly uniform image2D o_Image;
+
+layout (push_constant) uniform Uniforms
+{
+    // Settings
+    float time;
+    float zoom;
+    vec2 cameraPos;
+};
+
+void main() 
+{ 
+	vec2 imgSize = vec2(imageSize(o_Image));
+	ivec2 invocID = ivec2(gl_GlobalInvocationID);  
+	
+	vec2 uv = vec2(float(invocID.x) / imgSize.x, float(invocID.y) / imgSize.y);
+
+
+
+	imageStore(o_Image, invocID, vec4(0.f));
+}
