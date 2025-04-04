@@ -242,11 +242,7 @@ int main()
 {
 	Log::Init();
 
-#if defined(CLION)  // CLion
-	std::filesystem::current_path("../../Engine/workdir");
-#else  // Default or other IDEs
-	std::filesystem::current_path("../../../../Path Tracer/workdir");
-#endif
+	std::filesystem::current_path("../../Path Tracer/workdir");
 
 	glfwSetErrorCallback([](int err, const char* description) { WC_CORE_ERROR(description); /*WC_DEBUGBREAK();*/ });
 	//glfwSetMonitorCallback([](GLFWmonitor* monitor, int event)

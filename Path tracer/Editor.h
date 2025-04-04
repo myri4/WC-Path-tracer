@@ -20,7 +20,7 @@
 
 namespace wc
 {
-	class EditorInstance
+	struct EditorInstance
 	{
 		// Window managing
 		bool SettingsEnabled = true;
@@ -38,7 +38,6 @@ namespace wc
 			m_SelectedID = id;
 			m_SelectedType = type;
 		}
-	public:
 
 		glm::vec2 RenderSize;
 		glm::vec2 WindowPos;
