@@ -1,0 +1,15 @@
+#pragma shader_stage(compute)
+
+layout(local_size_x = 4, local_size_y = 4) in;
+layout(binding = 0, rgba32f) restrict writeonly uniform image2D o_Image;
+
+void main()
+{
+    vec2 imgSize = vec2(imageSize(o_Image));
+
+    ivec2 invocID = ivec2(gl_GlobalInvocationID);
+    vec2 texCoords = vec2(float(invocID.x) / imgSize.x, float(invocID.y) / imgSize.y);
+    texCoords += (1.f / imgSize) * 0.5f;
+
+    imageStore(o_Image, ivec2(gl_GlobalInvocationID), vec4(1.f, 0.f, 0.f, 1.f));
+}

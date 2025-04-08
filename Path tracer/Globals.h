@@ -1,8 +1,8 @@
 #pragma once
 
 #include <glm/glm.hpp>
-#include <wc/Utils/Window.h>
-#include <wc/Utils/Time.h>
+#include "Utils/Window.h"
+#include "Utils/Time.h"
 
 namespace wc 
 {

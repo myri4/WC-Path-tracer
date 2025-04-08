@@ -4,7 +4,11 @@
 #include "../Rendering/Texture.h"
 #include "../Rendering/Shader.h"
 
-#include <stdio.h>
+#include "../Memory/Buffer.h"
+
+#include "../Rendering/vk/Buffer.h"
+#include "../Rendering/vk/Commands.h"
+#include "../Rendering/vk/Image.h"
 
 // Visual Studio warnings
 #ifdef _MSC_VER

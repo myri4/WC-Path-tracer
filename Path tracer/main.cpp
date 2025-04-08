@@ -1,33 +1,18 @@
-#include <Windows.h>
-#include <commdlg.h>
-
-#pragma warning( push )
-#pragma warning( disable : 4702) // Disable unreachable code
-#define GLFW_INCLUDE_NONE
+#pragma warning(push)
+#pragma warning(disable : 4702) // Disable unreachable code
 //#define GLM_FORCE_PURE
 //#define GLM_FORCE_INTRINSICS 
-#include "Editor.h"
 
-//DANGEROUS!
-#pragma warning(push, 0)
+#include "magic_enum.hpp"
+#include "filesystem"
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image/stb_image.h>
+#include "imgui_backend/imgui_impl_glfw.h"
+#include "imgui_backend/imgui_impl_vulkan.h"
+#include "Globals.h"
 
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <stb_image/stb_write.h>
-
-#define VOLK_IMPLEMENTATION 
-#include <Volk/volk.h>
-
-#define VMA_IMPLEMENTATION
-#include <vma/vk_mem_alloc.h>
-
-#pragma warning(pop)
+#include "Editor/Editor.h"
 
 using namespace wc;
-
-EditorInstance editor;
 
 vk::Swapchain swapchain;
 
@@ -42,7 +27,7 @@ void Resize()
 	swapchain.Create(Globals.window);
 
 	// Resize renderers
-	editor.Resize(Globals.window.GetSize());
+	ResizeEditor(Globals.window.GetSize());
 	Globals.window.resized = false;
 }
 
@@ -53,7 +38,7 @@ bool InitApp()
 	{
 		.Width = 1280,
 		.Height = 720,
-		.Name = "Path Tracer",
+		.Name = "Editor",
 		.StartMode = WindowMode::Maximized,
 		.VSync = false,
 		.Resizeable = true,
@@ -73,17 +58,15 @@ bool InitApp()
 
 	ImGuiIO& io = ImGui::GetIO();
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	io.IniFilename = "imgui.ini";
 	//io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 
 	ImGui_ImplGlfw_InitForVulkan(Globals.window, false);
 
 	ImGui_ImplVulkan_Init(swapchain.RenderPass);
 	ImGui_ImplVulkan_CreateFontsTexture();
-
-	ImGuiStyle& style = ImGui::GetStyle();
-	//style = ui::SoDark(0.0f);
-	editor.Create(Globals.window.GetSize());
-	editor.ViewPortSize = Globals.window.GetSize();
+		
+	InitEditor();
 
 	return true;
 }
@@ -97,7 +80,7 @@ void UpdateApp()
 	//WC_CORE_INFO("Acquire result: {}, {}", magic_enum::enum_name(r), (int)r);
 
 	Globals.UpdateTime();
-	editor.Update();
+	UpdateEditor();
 
 	//auto extent = Globals.window.GetExtent();
 
@@ -112,7 +95,7 @@ void UpdateApp()
 			Resize();
 			return;
 		}
-		else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+		if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
 		{
 			WC_CORE_ERROR("Acquire result: {}, {}", magic_enum::enum_name(result), (int)result);
 		}
@@ -123,7 +106,7 @@ void UpdateApp()
 		ImGui::NewFrame();
 		//ImGuizmo::BeginFrame();
 
-		editor.UI();
+		UIEditor();
 
 		ImGui::Render();
 
@@ -214,7 +197,7 @@ void UpdateAppFrame()
 	{
 		Globals.window.PoolEvents();
 
-		if (Globals.window.HasFocus()) editor.Input();
+		if (Globals.window.HasFocus()) InputEditor();
 
 		UpdateApp();
 	}
@@ -233,16 +216,16 @@ void DeinitApp()
 	ImGui::DestroyContext();
 
 	vk::descriptorAllocator.Destroy();
-	editor.Destroy();
+	DestroyEditor();
 
 	vk::SyncContext::Destroy();
 }
 
 int main()
 {
-	Log::Init();
+	InitLog();
 
-	std::filesystem::current_path("../../Path Tracer/workdir");
+	std::filesystem::current_path("../../../../Path tracer/workdir");
 
 	glfwSetErrorCallback([](int err, const char* description) { WC_CORE_ERROR(description); /*WC_DEBUGBREAK();*/ });
 	//glfwSetMonitorCallback([](GLFWmonitor* monitor, int event)
@@ -257,12 +240,10 @@ int main()
 	{
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-
 		if (InitApp())
 			UpdateAppFrame();
 
 		DeinitApp();
-
 
 		VulkanContext::Destroy();
 	}

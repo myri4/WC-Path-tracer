@@ -15,13 +15,13 @@ namespace wc
 		ImVec4 ImVec4Offset(const ImVec4& v, const float offset) { return ImVec4(v.x + offset, v.y + offset, v.z + offset, v.w + offset); }
 	}
 
-	namespace ui
+	namespace UI
 	{
 		//Center Window
 		//if left on false, no need for ImGuiWindowFlags_NoMove
 		void CenterNextWindow(bool once) { ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), once ? ImGuiCond_Once : ImGuiCond_Always, ImVec2(0.5f, 0.5f)); }
 
-		bool IsKeyPressedDissabled(ImGuiKey key) { return !(gui::GetCurrentContext()->CurrentItemFlags & ImGuiItemFlags_Disabled) && gui::IsKeyPressed(key); }
+		bool IsKeyPressedDissabled(ImGuiKey key) { return !(ImGui::GetCurrentContext()->CurrentItemFlags & ImGuiItemFlags_Disabled) && ImGui::IsKeyPressed(key); }
 
 		std::string FileDialog(const char* name, const std::string& filter, const std::string& startPath, const bool limitToStart, const std::string& newFileFilter)
 		{
@@ -202,7 +202,7 @@ namespace wc
 
 							if (selectedPath == entry.path().string()) flags |= ImGuiTreeNodeFlags_Selected;
 
-							gui::SetNextItemOpen(false, ImGuiCond_Always);
+							ImGui::SetNextItemOpen(false, ImGuiCond_Always);
 							ImGui::TreeNodeEx("##node", flags, "%s", filename.c_str());
 
 							if (ImGui::IsItemClicked())
@@ -270,19 +270,19 @@ namespace wc
 				static std::string newFileName;
 				if (!newFileFilter.empty())
 				{
-					gui::Text("NewFile Name:"); ImGui::SameLine();
+					ImGui::Text("NewFile Name:"); ImGui::SameLine();
 					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(newFileFilter.c_str()).x - ImGui::GetStyle().FramePadding.x * 2 - ImGui::GetStyle().ItemSpacing.x);
-					gui::InputText("##NewFile", &newFileName);
+					ImGui::InputText("##NewFile", &newFileName);
 					ImGui::SameLine();
 					std::string newFileText = newFileFilter;
 					if (newFileFilter == ".*") newFileText += " All";
 					if (newFileFilter == ".") newFileText += " Folder";
 					ImGui::SetNextItemWidth(ImGui::CalcTextSize(newFileText.c_str()).x + ImGui::GetStyle().FramePadding.x * 2);
-					gui::InputText("##NewFileFilter", &newFileText, ImGuiInputTextFlags_ReadOnly);
+					ImGui::InputText("##NewFileFilter", &newFileText, ImGuiInputTextFlags_ReadOnly);
 				}
 
 				ImGui::BeginDisabled(selectedPath.empty() || (!newFileFilter.empty() && newFileName.empty()));
-				if (ImGui::Button("OK", { gui::GetContentRegionMax().x * 0.3f, 0 }) || (IsKeyPressedDissabled(ImGuiKey_Enter) && !selectedPath.empty()))
+				if (ImGui::Button("OK", { ImGui::GetContentRegionMax().x * 0.3f, 0 }) || (IsKeyPressedDissabled(ImGuiKey_Enter) && !selectedPath.empty()))
 				{
 					if (newFileFilter.empty())
 						finalPath = selectedPath;
@@ -298,8 +298,8 @@ namespace wc
 				ImGui::EndDisabled();
 
 				ImGui::SameLine();
-				ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - gui::GetContentRegionMax().x * 0.3f);
-				if (ImGui::Button("Cancel", { gui::GetContentRegionMax().x * 0.3f, 0 }) || ImGui::IsKeyPressed(ImGuiKey_Escape))
+				ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - ImGui::GetContentRegionMax().x * 0.3f);
+				if (ImGui::Button("Cancel", { ImGui::GetContentRegionMax().x * 0.3f, 0 }) || ImGui::IsKeyPressed(ImGuiKey_Escape))
 				{
 					newFileName.clear();
 					selectedPath.clear();
@@ -475,32 +475,32 @@ namespace wc
 
 		void CloseIfCursorFarFromCenter(float distance)
 		{
-			if (distance < 0.f) distance = glm::max(gui::GetWindowWidth(), gui::GetWindowHeight()) * 0.5f;
-			const ImVec2 mousePos = gui::GetIO().MousePos;
-			const ImVec2 windowPos = gui::GetWindowPos();
-			const float windowWidth = gui::GetWindowWidth();
-			const float windowHeight = gui::GetWindowHeight();
+			if (distance < 0.f) distance = glm::max(ImGui::GetWindowWidth(), ImGui::GetWindowHeight()) * 0.5f;
+			const ImVec2 mousePos = ImGui::GetIO().MousePos;
+			const ImVec2 windowPos = ImGui::GetWindowPos();
+			const float windowWidth = ImGui::GetWindowWidth();
+			const float windowHeight = ImGui::GetWindowHeight();
 
-			if (gui::IsWindowFocused() && gui::IsMousePosValid() &&
+			if (ImGui::IsWindowFocused() && ImGui::IsMousePosValid() &&
 				(mousePos.x < windowPos.x - distance ||
 					mousePos.x > windowPos.x + windowWidth + distance ||
 					mousePos.y < windowPos.y - distance ||
 					mousePos.y > windowPos.y + windowHeight + distance))
 			{
-				gui::CloseCurrentPopup();
+				ImGui::CloseCurrentPopup();
 			}
 		}
 
 		// add state if it is window
 		void CloseIfCursorFarFromCenter(bool& winState, float distance)
 		{
-			if (distance < 0.f) distance = glm::max(gui::GetWindowWidth(), gui::GetWindowHeight()) * 0.5f;
-			const ImVec2 mousePos = gui::GetIO().MousePos;
-			const ImVec2 windowPos = gui::GetWindowPos();
-			const float windowWidth = gui::GetWindowWidth();
-			const float windowHeight = gui::GetWindowHeight();
+			if (distance < 0.f) distance = glm::max(ImGui::GetWindowWidth(), ImGui::GetWindowHeight()) * 0.5f;
+			const ImVec2 mousePos = ImGui::GetIO().MousePos;
+			const ImVec2 windowPos = ImGui::GetWindowPos();
+			const float windowWidth = ImGui::GetWindowWidth();
+			const float windowHeight = ImGui::GetWindowHeight();
 
-			if (gui::IsWindowFocused() && gui::IsMousePosValid() &&
+			if (ImGui::IsWindowFocused() && ImGui::IsMousePosValid() &&
 				(mousePos.x < windowPos.x - distance ||
 					mousePos.x > windowPos.x + windowWidth + distance ||
 					mousePos.y < windowPos.y - distance ||
@@ -595,7 +595,7 @@ namespace wc
 
 		void DrawBgRows(float itemSpacingY)
 		{
-			if (itemSpacingY > -1) gui::PushStyleVarY(ImGuiStyleVar_ItemSpacing, itemSpacingY);
+			if (itemSpacingY > -1) ImGui::PushStyleVarY(ImGuiStyleVar_ItemSpacing, itemSpacingY);
 
 			ImGuiWindow* window = ImGui::GetCurrentWindow();
 			if (window->SkipItems) return;
@@ -641,14 +641,14 @@ namespace wc
 			}
 
 			draw_list->PopClipRect();
-			gui::PopStyleVar();
+			ImGui::PopStyleVar();
 		}
 
 		bool BeginMenuFt(const char* label, ImFont* font)
 		{
-			gui::PushFont(font);
+			ImGui::PushFont(font);
 			bool result = ImGui::BeginMenu(label);
-			gui::PopFont();
+			ImGui::PopFont();
 			return result;
 		}
 
@@ -656,10 +656,10 @@ namespace wc
 		//if there is a loaded font, you need to pop
 		void PushButtonColor(const ImVec4 color, const float hoverOffset, const float activeOffset, ImFont* font)
 		{
-			if (font)gui::PushFont(font);
-			gui::PushStyleColor(ImGuiCol_Button, color);
-			gui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(color.x * hoverOffset, color.y * hoverOffset, color.z * hoverOffset, color.w));
-			gui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(color.x * activeOffset, color.y * activeOffset, color.z * activeOffset, color.w));
+			if (font) ImGui::PushFont(font);
+			ImGui::PushStyleColor(ImGuiCol_Button, color);
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(color.x * hoverOffset, color.y * hoverOffset, color.z * hoverOffset, color.w));
+			ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(color.x * activeOffset, color.y * activeOffset, color.z * activeOffset, color.w));
 		}
 
 		void DragButton2(const char* txt, glm::vec2& v) // make this a bool func
@@ -668,7 +668,7 @@ namespace wc
 			const float buttonWidth = 20.0f;
 
 			// Calculate the available width for the input fields
-			float inputWidth = (gui::CalcItemWidth() - buttonWidth * 2 - ImGui::GetStyle().ItemSpacing.x) / 2;
+			float inputWidth = (ImGui::CalcItemWidth() - buttonWidth * 2 - ImGui::GetStyle().ItemSpacing.x) / 2;
 
 			// Draw colored button for "X"
 			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 0.0f, 0.0f, 0.5f)); // Red color
@@ -716,7 +716,7 @@ namespace wc
 			const float buttonWidth = 20.0f;
 
 			// Calculate the available width for the input fields
-			float inputWidth = (gui::CalcItemWidth() - buttonWidth * 3 - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
+			float inputWidth = (ImGui::CalcItemWidth() - buttonWidth * 3 - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
 
 			// Draw colored button for "X"
 			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 0.0f, 0.0f, 0.5f)); // Red color
@@ -787,7 +787,7 @@ namespace wc
 
 		void SeparatorEx(ImGuiSeparatorFlags flags, float thickness, bool hover)
 		{
-			ImGuiWindow* window = gui::GetCurrentWindow();
+			ImGuiWindow* window = ImGui::GetCurrentWindow();
 			if (window->SkipItems)
 				return;
 
@@ -801,14 +801,14 @@ namespace wc
 				float y1 = window->DC.CursorPos.y;
 				float y2 = window->DC.CursorPos.y + window->DC.CurrLineSize.y;
 				const ImRect bb(ImVec2(window->DC.CursorPos.x, y1), ImVec2(window->DC.CursorPos.x + thickness, y2));
-				gui::ItemSize(ImVec2(thickness, 0.0f));
-				if (!gui::ItemAdd(bb, 0))
+				ImGui::ItemSize(ImVec2(thickness, 0.0f));
+				if (!ImGui::ItemAdd(bb, 0))
 					return;
 
 				// Draw
-				window->DrawList->AddRectFilled(bb.Min, bb.Max, gui::GetColorU32(hover && gui::IsMouseHoveringRect(gui::GetItemRectMin(), gui::GetItemRectMax()) ? ImGuiCol_SeparatorHovered : ImGuiCol_Separator));
+				window->DrawList->AddRectFilled(bb.Min, bb.Max, ImGui::GetColorU32(hover && ImGui::IsMouseHoveringRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()) ? ImGuiCol_SeparatorHovered : ImGuiCol_Separator));
 				if (g.LogEnabled)
-					gui::LogText(" |");
+					ImGui::LogText(" |");
 			}
 			else if (flags & ImGuiSeparatorFlags_Horizontal)
 			{
@@ -824,26 +824,26 @@ namespace wc
 				{
 					x1 = window->Pos.x + window->DC.Indent.x; // Used to be Pos.x before 2023/10/03
 					x2 = window->Pos.x + window->Size.x;
-					gui::PushColumnsBackground();
+					ImGui::PushColumnsBackground();
 				}
 
 				// We don't provide our width to the layout so that it doesn't get feed back into AutoFit
 				// FIXME: This prevents ->CursorMaxPos based bounding box evaluation from working (e.g. TableEndCell)
 				const float thickness_for_layout = (thickness == 1.0f) ? 0.0f : thickness; // FIXME: See 1.70/1.71 Separator() change: makes legacy 1-px separator not affect layout yet. Should change.
 				const ImRect bb(ImVec2(x1, window->DC.CursorPos.y), ImVec2(x2, window->DC.CursorPos.y + thickness));
-				gui::ItemSize(ImVec2(0.0f, thickness_for_layout));
+				ImGui::ItemSize(ImVec2(0.0f, thickness_for_layout));
 
-				if (gui::ItemAdd(bb, 0))
+				if (ImGui::ItemAdd(bb, 0))
 				{
 					// Draw
-					window->DrawList->AddRectFilled(bb.Min, bb.Max, gui::GetColorU32(hover && gui::IsMouseHoveringRect(gui::GetItemRectMin(), gui::GetItemRectMax()) ? ImGuiCol_SeparatorHovered : ImGuiCol_Separator));
+					window->DrawList->AddRectFilled(bb.Min, bb.Max, ImGui::GetColorU32(hover && ImGui::IsMouseHoveringRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()) ? ImGuiCol_SeparatorHovered : ImGuiCol_Separator));
 					if (g.LogEnabled)
-						gui::LogRenderedText(&bb.Min, "--------------------------------\n");
+						ImGui::LogRenderedText(&bb.Min, "--------------------------------\n");
 
 				}
 				if (columns)
 				{
-					gui::PopColumnsBackground();
+					ImGui::PopColumnsBackground();
 					columns->LineMinY = window->DC.CursorPos.y;
 				}
 			}

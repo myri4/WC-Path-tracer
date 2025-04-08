@@ -1,31 +1,53 @@
 #pragma once
 
-#include <wc/Utils/Log.h>
-#include <wc/Utils/Image.h>
+#include "Utils/Log.h"
+#include "Utils/Image.h"
 
 #include <vector>
-#include <print>
 
 #include "Geometry.h"
 
-#include <wc/Utils/Time.h>
+#include "Utils/Time.h"
+
+using namespace glm;
 
 struct Camera
 {
-    glm::vec3 Position;
+    vec3 Position;
     float FOV = 90.f;
-    glm::mat4 Projection;
-    glm::mat4 InverseProjection;
-    glm::mat4 View;
+	mat4 Projection;
+	mat4 InverseProjection;
+	mat4 View;
 
     void Update()
     {
-        View = glm::lookAt(Position, glm::vec3(0.f, 0.f, -1.f), glm::vec3(0.f, 1.f, 0.f));
+        View = lookAt(Position, vec3(0.f, 0.f, -1.f), vec3(0.f, 1.f, 0.f));
 
-        Projection = glm::perspective(glm::radians(FOV), 16.f / 9.f, 0.1f, 100.0f);
-        InverseProjection = glm::inverse(Projection);
+        Projection = perspective(radians(FOV), 16.f / 9.f, 0.1f, 100.0f);
+        InverseProjection = inverse(Projection);
     }
 };
+
+vec3 Tonemap_PBRNeutral(vec3 color)
+{
+	const float startCompression = 0.8f - 0.04f;
+	const float desaturation = 0.15f;
+
+	float x = min(color.r, min(color.g, color.b));
+	float offset = x < 0.08f ? x - 6.25f * x * x : 0.04f;
+	color -= offset;
+
+	float peak = max(color.r, max(color.g, color.b));
+	if (peak < startCompression)
+		return color;
+
+	const float d = 1.0f - startCompression;
+	float newPeak = 1.0f - d * d / (peak + d - startCompression);
+	color *= newPeak / peak;
+
+	float g = 1.0f - 1.0f / (desaturation * (peak - newPeak) + 1.0f);
+	return mix(color, newPeak * vec3(1.0f), g);
+}
 
 struct Scene
 {
@@ -48,7 +70,7 @@ struct Scene
     {
         HitInfo temp_rec;
         bool hit_anything = false;
-        float t = 150.f;
+        float t = 150.0f;
 
         for (const auto& object : Spheres)
         {
@@ -63,35 +85,35 @@ struct Scene
         return hit_anything;
     }
 
-    glm::vec3 TraceRay2(const Ray& ray, uint32_t depth)
+    vec3 TraceRay2(const Ray& ray, uint32_t depth)
     {
-        if (depth == 0) return glm::vec3(0.f);
+        if (depth == 0) return vec3(0.f);
 
         HitInfo rec;
         if (!Intersect(ray, rec))
-            return glm::vec3(0.f);// glm::mix(glm::vec3(1.f), glm::vec3(0.5f, 0.7f, 1.f), 0.5f * (ray.Direction.y + 1.f));
+            return vec3(0.0f);// mix(vec3(1.f), vec3(0.5f, 0.7f, 1.f), 0.5f * (ray.Direction.y + 1.f));
 
         Ray scattered;
-        glm::vec3 attenuation;
-        glm::vec3 emmission = Materials[rec.material].emission;
+        vec3 attenuation;
+        vec3 emmission = Materials[rec.material].emission;
         if (!Materials[rec.material].scatter(ray, rec, attenuation, scattered))
             return emmission;
 
         return emmission + attenuation * TraceRay2(scattered, depth - 1);
     }
 
-    glm::vec3 TraceRay(Ray ray)
+    vec3 TraceRay(Ray ray)
     {
-        glm::vec3 incomingLight = glm::vec3(0.f);
-        glm::vec3 rayColor = glm::vec3(1.f);
+        vec3 incomingLight = vec3(0.0f);
+        vec3 rayColor = vec3(1.0f);
 
         for (uint32_t i = 0; i <= Depth; i++)
         {
             HitInfo rec;
             if (!Intersect(ray, rec))
-                return glm::vec3(0.f);// glm::mix(glm::vec3(1.f), glm::vec3(0.5f, 0.7f, 1.f), 0.5f * (ray.Direction.y + 1.f));
+                return vec3(0.0f);// mix(vec3(1.f), vec3(0.5f, 0.7f, 1.f), 0.5f * (ray.Direction.y + 1.f));
 
-            glm::vec3 attenuation;
+            vec3 attenuation;
             if (!Materials[rec.material].scatter(ray, rec, attenuation, ray)) 
                 return incomingLight + Materials[rec.material].emission * rayColor;
 
@@ -100,18 +122,7 @@ struct Scene
         }
 
         return incomingLight;
-    }
-
-    glm::vec3 Tonemap_ACES(glm::vec3 x)
-    {
-        // Narkowicz 2015, "ACES Filmic Tone Mapping Curve"
-        const float a = 2.51;
-        const float b = 0.03;
-        const float c = 2.43;
-        const float d = 0.59;
-        const float e = 0.14;
-        return (x * (a * x + b)) / (x * (c * x + d) + e);
-    }
+    }    
 
     void Render()
     {
@@ -120,21 +131,21 @@ struct Scene
         {
             for (uint32_t x = 0; x < image.Width; x++)
             {
-                glm::vec2 coord = { (float)x / (float)image.Width, (float)y / (float)image.Height };
+                vec2 coord = { (float)x / (float)image.Width, (float)y / (float)image.Height };
                 coord.y = 1.f - coord.y;
                 coord = coord * 2.f - 1.f; // -1 -> 1
-                glm::vec4 target = camera.InverseProjection * glm::vec4(coord.x, coord.y, 1, 1);
-                glm::vec3 rayDirection = glm::vec3(camera.View * glm::vec4(glm::normalize(glm::vec3(target) / target.w), 0.f));
+                vec4 target = camera.InverseProjection * vec4(coord.x, coord.y, 1, 1);
+                vec3 rayDirection = vec3(camera.View * vec4(normalize(vec3(target) / target.w), 0.0f));
 
-                glm::vec3 result;
+                vec3 result;
 
                 for (int sample = 0; sample < Samples; sample++)
                     result += TraceRay(Ray(camera.Position, rayDirection));
 
                 result /= Samples;
-                result = pow(result, glm::vec3(1.f / 2.2f));
-                result = Tonemap_ACES(result);
-                image.Set(x, y, glm::vec4(result, 1.f) * 255.f);
+                result = pow(result, vec3(1.0f / 2.2f));
+                result = Tonemap_PBRNeutral(result);
+                image.Set(x, y, vec4(result, 1.0f) * 255.f);
             }
         }
     }

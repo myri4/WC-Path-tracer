@@ -1,5 +1,3 @@
-#pragma once
-
 #include "FileDialogs.h"
 
 #include <Windows.h>

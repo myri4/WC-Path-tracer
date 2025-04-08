@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
 
-set(OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${PROJECT_NAME}")
-set(VENDOR "vendor/")
 
 project("PathTracer")
 add_definitions(
@@ -14,40 +12,20 @@ add_definitions(
 string(REPLACE "-Wformat" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 
 file(GLOB_RECURSE SOURCES "${CMAKE_SOURCE_DIR}/Path tracer/*.cpp" "${CMAKE_SOURCE_DIR}/Path tracer/*.h")
-file(GLOB_RECURSE SOURCES2 "vendor/wc/*.cpp" "vendor/wc/*.h")
 file(GLOB IMGUI_SOURCES
 "vendor/imgui/*.cpp" "vendor/imgui/*.h"
 "vendor/imgui/misc/cpp/*.cpp" "vendor/imgui/misc/cpp/*.h"
 )
 
-# Check if we're inside CLion
-if (NOT DEFINED ENV{CLION_IDE})
-    if (MSVC)
-        add_definitions(-DMSVC)
-    endif()
-else()
-    add_definitions(-DCLION)
-endif()
-
 add_executable("PathTracer"
     ${SOURCES}
-    ${SOURCES2}
     ${IMGUI_SOURCES}
     #"vendor/imguizmo/ImGuizmo.cpp"
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${OUTPUT_DIRECTORY}"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
-
-if(MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
-    
-    add_compile_definitions(
-        $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=2>
-        $<$<CONFIG:Release>:_ITERATOR_DEBUG_LEVEL=0>
-    )
-endif()
 
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 
@@ -80,3 +58,40 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 "vendor/imgui"
 )
 target_link_directories(${PROJECT_NAME} PUBLIC ${VULKAN_LIBRARY_DIRS})
+
+set(PROJECT_SRC_DIR "${PROJECT_SOURCE_DIR}/Path tracer") # We define PROJECT_SRC_DIR like this because PROJECT_SOURCE_DIR is a predefined macro
+set(PROJECT_WORK_DIR "${PROJECT_SRC_DIR}/workdir")
+# SHADER COMPILATION
+set(SHADER_IN_DIR "${PROJECT_SRC_DIR}/shaders")
+file(GLOB SHADER_SOURCES
+        "${SHADER_IN_DIR}/*.vert"
+        "${SHADER_IN_DIR}/*.frag"
+        "${SHADER_IN_DIR}/*.comp")
+
+file(GLOB SHADER_HEADERS
+        "${SHADER_IN_DIR}/include/*.glsl")
+
+# Create custom target for all shaders
+add_custom_target(shaders ALL)
+
+foreach(SHADER ${SHADER_SOURCES})
+    get_filename_component(SHADER_NAME ${SHADER} NAME)
+    add_custom_command(
+            OUTPUT "${PROJECT_WORK_DIR}/assets/shaders/${SHADER_NAME}"
+            COMMAND "$ENV{VULKAN_SDK}/Bin/glslc.exe"
+            -std=450core
+            -I"${SHADER_IN_DIR}/include"
+            -o "${PROJECT_WORK_DIR}/assets/shaders/${SHADER_NAME}"
+            -O0
+            ${SHADER}
+            DEPENDS ${SHADER}
+            ${SHADER_HEADERS}
+            COMMENT "Compiling ${SHADER_NAME}"
+            VERBATIM
+    )
+    add_custom_target(${SHADER_NAME} DEPENDS "${PROJECT_WORK_DIR}/assets/shaders/${SHADER_NAME}")
+    add_dependencies(shaders ${SHADER_NAME})
+endforeach()
+
+# Make shaders compile automatically when building the main target
+add_dependencies(${PROJECT_NAME} shaders)

@@ -2,16 +2,9 @@
 #ifndef IMGUI_DISABLE
 #include "imgui/imgui.h"      // IMGUI_IMPL_API
 
-// Vulkan includes
-#include "../Memory/Buffer.h"
-
-#include "../Rendering/vk/Buffer.h"
-#include "../Rendering/vk/Commands.h"
-#include "../Rendering/vk/Image.h"
-#include "../Rendering/vk/SyncContext.h"
-#include "../Rendering/Descriptors.h"
-#include "../Rendering/Shader.h"
 #include "../Rendering/Swapchain.h"
+#include "../Rendering/Descriptors.h"
+#include "../Rendering/vk/SyncContext.h"
 
 // Called by user code
 void         ImGui_ImplVulkan_Init(VkRenderPass rp);
