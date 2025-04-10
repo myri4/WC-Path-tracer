@@ -151,7 +151,7 @@ struct ImGui_ImplVulkan_ViewportData
 struct ImGui_ImplVulkan_Data
 {
 	VkRenderPass RenderPass = VK_NULL_HANDLE;
-	wc::Shader   Shader;
+	wc::Pipeline   Shader;
 	wc::Texture  FontTexture;
 
 	// Render buffers for main window
@@ -162,7 +162,7 @@ static ImGui_ImplVulkan_Data* ImGui_ImplVulkan_GetBackendData() { return ImGui::
 
 VkDescriptorSet MakeImGuiDescriptor(VkDescriptorSet dSet, const VkDescriptorImageInfo& imageInfo)
 {
-	if (dSet == VK_NULL_HANDLE) vk::descriptorAllocator.Allocate(dSet, ImGui_ImplVulkan_GetBackendData()->Shader.DescriptorLayout);
+	if (dSet == VK_NULL_HANDLE) vk::descriptorAllocator.Allocate(dSet, ImGui_ImplVulkan_GetBackendData()->Shader.descriptorLayout);
 
 	vk::DescriptorWriter writer(dSet);
 	writer.BindImage(0, imageInfo, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
@@ -244,7 +244,7 @@ void ImGui_ImplVulkan_RenderDrawData(ImDrawData* draw_data, VkCommandBuffer cmd,
 	vkBeginCommandBuffer(cmd, &begInfo);
     vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 	{
-		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bd->Shader.Pipeline);
+		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bd->Shader.handle);
 
 		if (draw_data->TotalVtxCount > 0)
 			vkCmdBindIndexBuffer(cmd, rb->IndexBuffer, 0, sizeof(ImDrawIdx) == 2 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
@@ -270,7 +270,7 @@ void ImGui_ImplVulkan_RenderDrawData(ImDrawData* draw_data, VkCommandBuffer cmd,
 		u_Data.translate[0] = -1.f - draw_data->DisplayPos.x * u_Data.scale[0];
 		u_Data.translate[1] = -1.f - draw_data->DisplayPos.y * u_Data.scale[1];
         u_Data.vertexBuffer = rb->VertexBuffer.GetDeviceAddress();
-		vkCmdPushConstants(cmd, bd->Shader.PipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(u_Data), &u_Data);
+		vkCmdPushConstants(cmd, bd->Shader.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(u_Data), &u_Data);
 	}
 
     // Will project scissor/clipping rectangles into framebuffer space
@@ -317,7 +317,7 @@ void ImGui_ImplVulkan_RenderDrawData(ImDrawData* draw_data, VkCommandBuffer cmd,
                     // We don't support texture switches if ImTextureID hasn't been redefined to be 64-bit. Do a flaky check that other textures haven't been used.
                     desc_set = bd->FontTexture.imageID;
                 }
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bd->Shader.PipelineLayout, 0, 1, &desc_set, 0, nullptr);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bd->Shader.layout, 0, 1, &desc_set, 0, nullptr);
 
                 // Draw
                 vkCmdDrawIndexed(cmd, pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
@@ -483,7 +483,7 @@ void ImGui_ImplVulkan_Init(VkRenderPass rp)
     bd->RenderPass = rp;
 
 	// Bilinear sampling is required by default. Set 'io.Fonts->Flags |= ImFontAtlasFlags_NoBakedLines' or 'style.AntiAliasedLinesUseTex = false' to allow point/nearest sampling.
-	wc::ShaderCreateInfo createInfo;
+	wc::PipelineCreateInfo createInfo;
 	createInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	wc::ReadBinary("assets/shaders/imgui.vert", createInfo.binaries[0]);
 	wc::ReadBinary("assets/shaders/imgui.frag", createInfo.binaries[1]);

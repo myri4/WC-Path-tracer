@@ -160,7 +160,7 @@ namespace wc
 
 	struct ComputePass : public RenderPass
 	{
-		Shader shader;
+		Pipeline shader;
 	};
 
 	struct RenderGraph
@@ -168,7 +168,7 @@ namespace wc
 		std::vector<RenderPass*> Passes;
 		std::vector<GraphAttachment> Attachments;
 
-		std::vector<Shader> Shaders;
+		std::vector<Pipeline> Shaders;
 
 		std::vector<VkCommandBuffer> usableCommands;
 		std::vector<VkCommandBuffer> pendingCommands;
@@ -197,7 +197,7 @@ namespace wc
 			return ptr;
 		}
 
-		ComputePass* AddComputePass(const std::string& name, InitRenderPassFunction initFunc, DrawCallbackFunction execution, const ComputeShaderCreateInfo& shaderInfo)
+		ComputePass* AddComputePass(const std::string& name, InitRenderPassFunction initFunc, DrawCallbackFunction execution, const ComputePipelineCreateInfo& shaderInfo)
 		{
 			for (auto& pass : Passes)
 				if (pass->name == name)
@@ -676,7 +676,7 @@ namespace wc
 					if (previousType == PassType::Graphics && cmd) PerformSubmit(vk::SyncContext::GetGraphicsQueue());
 					BeginRecording(pass->type);
 
-					vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pass->shader.Pipeline);
+					vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pass->shader.handle);
 
 					for (auto& c : encoder.GetEncodeBuffer())
 					{
@@ -689,7 +689,7 @@ namespace wc
 						{
 							auto* pCmd = static_cast<CMD_BindDescriptorSet*>(command);
 
-							vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pass->shader.PipelineLayout, pCmd->setNumber, 1, (VkDescriptorSet*)&pCmd->descriptorSet, 0, nullptr);
+							vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pass->shader.layout, pCmd->setNumber, 1, (VkDescriptorSet*)&pCmd->descriptorSet, 0, nullptr);
 						}
 						break;
 						case CommandType::Dispatch:
@@ -704,7 +704,7 @@ namespace wc
 						case CommandType::PushConstants:
 						{
 							auto* pCmd = static_cast<CMD_PushConstants*>(command);
-							vkCmdPushConstants(cmd, pass->shader.PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, pCmd->offset, pCmd->size, pCmd->data);
+							vkCmdPushConstants(cmd, pass->shader.layout, VK_SHADER_STAGE_COMPUTE_BIT, pCmd->offset, pCmd->size, pCmd->data);
 							free(pCmd->data);
 						}
 						break;

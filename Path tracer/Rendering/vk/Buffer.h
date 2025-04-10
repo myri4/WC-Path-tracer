@@ -43,7 +43,7 @@ namespace vk
 
 		void Unmap() { vmaUnmapMemory(VulkanContext::GetMemoryAllocator(), m_Allocation); }
 
-		void SetData(const void* data, VkDeviceSize size = VK_WHOLE_SIZE)
+		void SetData(const void* data, VkDeviceSize size)
 		{
 			memcpy(Map(), data, size);
 			Unmap();

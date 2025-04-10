@@ -393,16 +393,16 @@ namespace VulkanContext
 				else
 					WC_CORE_WARN("Independent blend feature is not supported")
 
-					VkPhysicalDeviceVulkan12Features features12 = {
-						.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+				VkPhysicalDeviceVulkan12Features features12 = {
+					.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
 
-						.shaderSampledImageArrayNonUniformIndexing = true,
-						.descriptorBindingPartiallyBound = true,
-						.descriptorBindingVariableDescriptorCount = true,
-						.runtimeDescriptorArray = true,
-						.scalarBlockLayout = true,
-						.timelineSemaphore = true,
-						.bufferDeviceAddress = true,
+					.shaderSampledImageArrayNonUniformIndexing = true,
+					.descriptorBindingPartiallyBound = true,
+					.descriptorBindingVariableDescriptorCount = true,
+					.runtimeDescriptorArray = true,
+					.scalarBlockLayout = true,
+					.timelineSemaphore = true,
+					.bufferDeviceAddress = true,
 				};
 
 

@@ -7,26 +7,9 @@
 
 #include "Geometry.h"
 
-#include "Utils/Time.h"
+#include "Renderers/PathTracingRenderer.h"
 
 using namespace glm;
-
-struct Camera
-{
-    vec3 Position;
-    float FOV = 90.f;
-	mat4 Projection;
-	mat4 InverseProjection;
-	mat4 View;
-
-    void Update()
-    {
-        View = lookAt(Position, vec3(0.f, 0.f, -1.f), vec3(0.f, 1.f, 0.f));
-
-        Projection = perspective(radians(FOV), 16.f / 9.f, 0.1f, 100.0f);
-        InverseProjection = inverse(Projection);
-    }
-};
 
 vec3 Tonemap_PBRNeutral(vec3 color)
 {
@@ -134,13 +117,13 @@ struct Scene
                 vec2 coord = { (float)x / (float)image.Width, (float)y / (float)image.Height };
                 coord.y = 1.f - coord.y;
                 coord = coord * 2.f - 1.f; // -1 -> 1
-                vec4 target = camera.InverseProjection * vec4(coord.x, coord.y, 1, 1);
-                vec3 rayDirection = vec3(camera.View * vec4(normalize(vec3(target) / target.w), 0.0f));
+                vec4 target = camera.inverseProjection * vec4(coord.x, coord.y, 1, 1);
+                vec3 rayDirection = vec3(camera.inverseView * vec4(normalize(vec3(target) / target.w), 0.0f));
 
                 vec3 result;
 
                 for (int sample = 0; sample < Samples; sample++)
-                    result += TraceRay(Ray(camera.Position, rayDirection));
+                    result += TraceRay(Ray(camera.position, rayDirection));
 
                 result /= Samples;
                 result = pow(result, vec3(1.0f / 2.2f));

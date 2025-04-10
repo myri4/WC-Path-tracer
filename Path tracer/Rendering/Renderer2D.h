@@ -8,18 +8,18 @@
 
 #include "CommandEncoder.h"
 
-namespace blaze
+namespace wc
 {
 	inline uint32_t m_ComputeWorkGroupSize = 4; // @TODO: REMOVE!!!?
 
 	struct BloomPass
 	{
-		wc::Shader m_Shader;
-		vk::Sampler m_Sampler;
+		wc::Pipeline pipeline;
+		vk::Sampler sampler;
 
-		std::vector<VkDescriptorSet> m_DescriptorSets;
+		std::vector<VkDescriptorSet> descriptorSets;
 
-		uint32_t m_MipLevels = 1;
+		uint32_t mipLevels = 1;
 
 		struct
 		{
@@ -44,8 +44,8 @@ namespace blaze
 
 	struct CompositePass
 	{
-		wc::Shader m_Shader;
-		VkDescriptorSet m_DescriptorSet;
+		wc::Pipeline pipeline;
+		VkDescriptorSet descriptorSet;
 
 		void Init();
 
@@ -58,8 +58,8 @@ namespace blaze
 
 	struct CRTPass
 	{
-		wc::Shader m_Shader;
-		VkDescriptorSet m_DescriptorSet;
+		wc::Pipeline pipeline;
+		VkDescriptorSet descriptorSet;
 
 		void Init();
 
@@ -88,11 +88,11 @@ namespace blaze
 		vk::ImageView m_EntityImageView;
 
 
-		wc::Shader m_Shader;
+		wc::Pipeline m_Shader;
 		VkDescriptorSet m_DescriptorSet;
 		uint32_t TextureCapacity = 0;
 
-		wc::Shader m_LineShader;
+		wc::Pipeline m_LineShader;
 
 
 		// Post processing

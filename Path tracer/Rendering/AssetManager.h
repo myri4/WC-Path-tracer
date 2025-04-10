@@ -36,7 +36,7 @@ namespace wc
             TextureCache.clear();
         }
 
-		uint32_t LoadFont(const std::string& file)
+		/*uint32_t LoadFont(const std::string& file)
 		{
 			if (FontCache.find(file) != FontCache.end())
 				return FontCache[file];
@@ -55,7 +55,7 @@ namespace wc
             FontCache[file] = 0;
 			WC_CORE_ERROR("Cannot find file at location: {}", file);
 			return 0;
-		}
+		}*/
 
 		uint32_t PushTexture(const Texture& texture)
 		{

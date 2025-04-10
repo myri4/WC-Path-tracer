@@ -1,6 +1,6 @@
 #include "Splines.h"
 
-namespace blaze
+namespace wc
 {
 	glm::vec2 bezierLerp(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, float t)
 	{

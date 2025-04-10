@@ -16,7 +16,7 @@ namespace wc
 	void ReadBinary(const std::string& filename, std::vector<uint32_t>& buffer);
 	VkPipelineColorBlendAttachmentState CreateBlendAttachment(bool enable = true);
 
-	struct ShaderCreateInfo
+	struct PipelineCreateInfo
 	{
 		std::vector<uint32_t> binaries[2];
 
@@ -37,11 +37,11 @@ namespace wc
 		uint32_t dynamicStateCount = 0;
 	};
 
-	struct ComputeShaderCreateInfo
+	struct ComputePipelineCreateInfo
 	{
-		ComputeShaderCreateInfo() = default;
-		ComputeShaderCreateInfo(const std::string& path);
-		ComputeShaderCreateInfo(const char* path);
+		ComputePipelineCreateInfo() = default;
+		ComputePipelineCreateInfo(const std::string& path);
+		ComputePipelineCreateInfo(const char* path);
 
 		std::vector<uint32_t> binary;
 
@@ -50,18 +50,18 @@ namespace wc
 		bool dynamicDescriptorCount = false;
 	};
 
-	struct Shader
+	struct Pipeline
 	{	
-		VkPipeline Pipeline = VK_NULL_HANDLE;
-		VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
-		VkDescriptorSetLayout DescriptorLayout = VK_NULL_HANDLE;
+		VkPipeline handle = VK_NULL_HANDLE;
+		VkPipelineLayout layout = VK_NULL_HANDLE;
+		VkDescriptorSetLayout descriptorLayout = VK_NULL_HANDLE;
 
 		VkDescriptorSet AllocateDescriptorSet();
 
 		void Destroy();
 
-		void Create(const ShaderCreateInfo& createInfo);
+		void Create(const PipelineCreateInfo& createInfo);
 
-		void Create(const ComputeShaderCreateInfo& createInfo);
+		void Create(const ComputePipelineCreateInfo& createInfo);
 	};
 }

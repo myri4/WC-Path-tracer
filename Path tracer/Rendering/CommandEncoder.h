@@ -104,14 +104,14 @@ namespace wc
 
 	struct CommandEncoder
 	{
-		void BindShader(Shader shader)
+		void BindShader(Pipeline shader)
 		{
 			auto* cmd = encode<CMD_BindPipeline>();
 
 			cmd->type = CommandType::BindPipeline;
-			cmd->pipeline = shader.Pipeline;
-			cmd->layout = shader.PipelineLayout;
-			cmd->descriptorLayout = shader.DescriptorLayout;
+			cmd->pipeline = shader.handle;
+			cmd->layout = shader.layout;
+			cmd->descriptorLayout = shader.descriptorLayout;
 		}
 
 		void BindDescriptorSet(VkDescriptorSet descriptorSet, uint8_t setNumber = 0)
@@ -192,17 +192,8 @@ namespace wc
 			PushConstants(sizeof(data), &data, 0);
 		}
 
-		void ExecuteCompute(VkCommandBuffer cmd)
+		void RecordInto(VkCommandBuffer cmd)
 		{
-			vkResetCommandBuffer(cmd, 0);
-
-			VkCommandBufferBeginInfo begInfo = {
-				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-				.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
-			};
-
-			vkBeginCommandBuffer(cmd, &begInfo);
-
 			VkPipelineLayout boundLayout = VK_NULL_HANDLE;
 
 			for (auto& c : encode_buffer)
@@ -245,6 +236,20 @@ namespace wc
 				break;
 				}
 			}
+		}
+
+		void ExecuteCompute(VkCommandBuffer cmd)
+		{
+			vkResetCommandBuffer(cmd, 0);
+
+			VkCommandBufferBeginInfo begInfo = {
+				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+				.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+			};
+
+			vkBeginCommandBuffer(cmd, &begInfo);
+
+			RecordInto(cmd);
 			
 			vkEndCommandBuffer(cmd);
 

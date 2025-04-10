@@ -34,6 +34,9 @@ glm::vec2 RenderSize;
 
 glm::vec2 ViewPortSize = glm::vec2(1.f);
 
+Camera camera;
+float MouseSensitivity = 5.f;
+
 PathTracingRenderer PathTracer;
 
 // Window Buttons
@@ -128,10 +131,86 @@ void DestroyEditor()
 	m_Renderer.Deinit();*/
 }
 
+glm::ivec2 prevPos;
+
 void InputEditor()
 {
 	if (allowInput)
 	{
+		auto windSize = Globals.window.GetSize();
+		float yaw90 = glm::radians(camera.yaw + 90.f);
+		const float MovementSpeed = 4.f * Globals.deltaTime;
+
+		if (Key::GetKey(Key::W)) 
+		{
+			camera.position.x += camera.direction.x * MovementSpeed;
+			camera.position.z += camera.direction.z * MovementSpeed;
+		}
+
+		else if (Key::GetKey(Key::S)) 
+		{
+			camera.position.x -= camera.direction.x * MovementSpeed;
+			camera.position.z -= camera.direction.z * MovementSpeed;
+		}
+		
+		if (Key::GetKey(Key::A))
+		{
+			camera.position.x -= glm::cos(yaw90) * MovementSpeed;
+			camera.position.z -= glm::sin(yaw90) * MovementSpeed;
+		}
+		else if (Key::GetKey(Key::D))
+		{
+			camera.position.x += glm::cos(yaw90) * MovementSpeed;
+			camera.position.z += glm::sin(yaw90) * MovementSpeed;
+		}
+
+		if (Key::GetKey(Key::Space))
+			camera.position.y += MovementSpeed;
+
+		else if (Key::GetKey(Key::LeftShift))
+			camera.position.y -= MovementSpeed;
+
+
+		if (Key::GetKey(Key::C)) { camera.fov = 10.f; MouseSensitivity = 18; }
+		else
+		{
+			MouseSensitivity = 5.f;
+			camera.fov = 90.f;
+		}
+
+		glm::ivec2 pos = Globals.window.GetCursorPos();
+		if (Mouse::GetMouse(Mouse::RIGHT))
+		{
+			float ms = 1.f / MouseSensitivity;
+
+			camera.yaw -= (prevPos.x - pos.x) * ms;
+
+			camera.pitch += (prevPos.y - pos.y) * ms;
+		}
+		prevPos = pos;
+
+		/*Mouse*/
+		/*uint16_t xt, yt;
+
+		glm::ivec2 pos = Globals.window.GetCursorPos();
+
+		xt = windSize.x / 2;
+		yt = windSize.y / 2;
+
+		float ms = 1.f / MouseSensitivity;
+
+		camera.Yaw -= (xt - pos.x) * ms;
+
+		camera.Pitch += (yt - pos.y) * ms;
+
+		// make sure that when pitch is out of bounds, screen doesn't get flipped
+		if (camera.Pitch > 89.f) camera.Pitch = 89.f;
+		else if (camera.Pitch < -89.f) camera.Pitch = -89.f;
+
+		if (camera.Yaw > 360.f) camera.Yaw = 0.f;
+		else if (camera.Yaw < 0.f) camera.Yaw = 360.f;
+
+		Globals.window.SetCursorPos({ xt, yt });*/
 
 		/*if (Key::GetKey(Key::LeftAlt))
 		{
@@ -174,13 +253,12 @@ void InputEditor()
 
 void UpdateEditor() 
 {
-	PathTracer.Render();
+	camera.Update(ViewPortSize.x / ViewPortSize.y);
+	PathTracer.Render(camera);
 }
 
 void UI_Editor()
 {
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.f, 0.f));
-
 	if (ImGui::Begin("Editor", &showEditor))
 	{
 		allowInput = ImGui::IsWindowFocused() && ImGui::IsWindowHovered();
@@ -247,13 +325,11 @@ void UI_Editor()
 
 		ImGui::GetWindowDrawList()->AddImage((ImTextureID)PathTracer.ImguiImageID, ImVec2(WindowPos.x, WindowPos.y), ImVec2(WindowPos.x + RenderSize.x, WindowPos.y + RenderSize.y));
 	}
-	ImGui::PopStyleVar();
 	ImGui::End();
 }
 
 void UI_Entities()
 {
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.f, 0.f));
 	if (ImGui::Begin("Entities", &showEntities, ImGuiWindowFlags_MenuBar))
 	{
 
@@ -261,7 +337,16 @@ void UI_Entities()
 	ImGui::End();
 }
 
-void UI_Properties() {}
+void UI_Properties() 
+{
+	if (ImGui::Begin("Properties", &showEntities, ImGuiWindowFlags_MenuBar))
+	{
+		UI::Drag3("Camera position", glm::value_ptr(camera.position));
+		UI::Drag("Yaw", camera.yaw);
+		UI::Drag("Pitch", camera.pitch);
+	}
+	ImGui::End();
+}
 
 const std::unordered_map<spdlog::level::level_enum, std::pair<glm::vec4, std::string>> level_colors = { //@TODO: This could be deduced to just an array of colors
 		{spdlog::level::trace,    {glm::vec4(0.f  , 184.f, 217.f, 255.f) / 255.f, "Debug"}}, // trace = debug
@@ -273,7 +358,6 @@ const std::unordered_map<spdlog::level::level_enum, std::pair<glm::vec4, std::st
 
 void UI_Console()
 {
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.f, 0.f));
 	if (ImGui::Begin("Console", &showConsole, ImGuiWindowFlags_MenuBar))
 	{
 		static bool scrollToBottom;
@@ -284,7 +368,6 @@ void UI_Console()
 		static bool showError = true;
 		static bool showCritical = true;
 
-		ImGui::PopStyleVar();
 		if (ImGui::BeginMenuBar())
 		{
 			if (ImGui::MenuItem("Clear"))
@@ -324,7 +407,6 @@ void UI_Console()
 
 			ImGui::EndMenuBar();
 		}
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.f, 0.f));
 
 		ImGuiTableFlags window_flags = ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit;
 		if (!scrollToBottom) window_flags |= ImGuiTableFlags_RowBg;
@@ -391,7 +473,6 @@ void UI_Console()
 
 					ImGui::TableSetColumnIndex(3);
 					ImGui::TextColored(color, msg.payload.c_str());
-					ImGui::PopFont();
 				}
 
 			}
@@ -400,7 +481,6 @@ void UI_Console()
 		}
 	}
 	ImGui::End();
-	ImGui::PopStyleVar();
 }
 
 void UI_DebugStats()

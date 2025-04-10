@@ -9,7 +9,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
-namespace blaze
+namespace wc
 {
 	void RenderData::UploadVertexData()
 	{
@@ -185,7 +185,7 @@ namespace blaze
 
 	void RenderData::DrawString(const std::string& string, const Font& font, const glm::mat4& transform, const glm::vec4& color, float lineSpacing, float kerning, uint64_t entityID)
 	{
-		const auto& fontGeometry = font.Geometry;
+		/*const auto& fontGeometry = font.Geometry;
 		const auto& metrics = fontGeometry.getMetrics();
 		uint32_t texID = font.TextureID;
 		auto& fontAtlas = font.Tex;
@@ -287,7 +287,7 @@ namespace blaze
 
 				x += fsScale * advance + kerning;
 			}
-		}
+		}*/
 	}
 
 	void RenderData::DrawString(const std::string& string, const Font& font, glm::vec2 position, glm::vec2 scale, float rotation, const glm::vec4& color, float lineSpacing, float kerning, uint64_t entityID)

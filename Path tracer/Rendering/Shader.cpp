@@ -38,30 +38,30 @@ namespace wc
 		};
 	}
 
-	ComputeShaderCreateInfo::ComputeShaderCreateInfo(const std::string& path) { wc::ReadBinary(path, binary); }
-	ComputeShaderCreateInfo::ComputeShaderCreateInfo(const char* path) { wc::ReadBinary(path, binary); }
+	ComputePipelineCreateInfo::ComputePipelineCreateInfo(const std::string& path) { wc::ReadBinary(path, binary); }
+	ComputePipelineCreateInfo::ComputePipelineCreateInfo(const char* path) { wc::ReadBinary(path, binary); }
 
 
-	VkDescriptorSet Shader::AllocateDescriptorSet()
+	VkDescriptorSet Pipeline::AllocateDescriptorSet()
 	{
 		VkDescriptorSet descriptor;
-		vk::descriptorAllocator.Allocate(descriptor, DescriptorLayout);
+		vk::descriptorAllocator.Allocate(descriptor, descriptorLayout);
 		return descriptor;
 	}
 
-	void Shader::Destroy()
+	void Pipeline::Destroy()
 	{
-		vkDestroyPipeline(VulkanContext::GetLogicalDevice(), Pipeline, VulkanContext::GetAllocator());
-		Pipeline = VK_NULL_HANDLE;
+		vkDestroyPipeline(VulkanContext::GetLogicalDevice(), handle, VulkanContext::GetAllocator());
+		handle = VK_NULL_HANDLE;
 
-		vkDestroyPipelineLayout(VulkanContext::GetLogicalDevice(), PipelineLayout, VulkanContext::GetAllocator());
-		PipelineLayout = VK_NULL_HANDLE;
+		vkDestroyPipelineLayout(VulkanContext::GetLogicalDevice(), layout, VulkanContext::GetAllocator());
+		layout = VK_NULL_HANDLE;
 
-		vkDestroyDescriptorSetLayout(VulkanContext::GetLogicalDevice(), DescriptorLayout, VulkanContext::GetAllocator());
-		DescriptorLayout = VK_NULL_HANDLE;
+		vkDestroyDescriptorSetLayout(VulkanContext::GetLogicalDevice(), descriptorLayout, VulkanContext::GetAllocator());
+		descriptorLayout = VK_NULL_HANDLE;
 	}
 
-	void Shader::Create(const ShaderCreateInfo& createInfo)
+	void Pipeline::Create(const PipelineCreateInfo& createInfo)
 	{
 		std::array<VkShaderModule, 2> shaderModules = {};
 		std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages = {};
@@ -232,17 +232,17 @@ namespace wc
 				layoutInfo.pNext = &binding_flags;
 			}
 
-			vkCreateDescriptorSetLayout(VulkanContext::GetLogicalDevice(), &layoutInfo, VulkanContext::GetAllocator(), &DescriptorLayout);
+			vkCreateDescriptorSetLayout(VulkanContext::GetLogicalDevice(), &layoutInfo, VulkanContext::GetAllocator(), &descriptorLayout);
 
 			VkPipelineLayoutCreateInfo info = {
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 				.setLayoutCount = 1,
-				.pSetLayouts = &DescriptorLayout,
+				.pSetLayouts = &descriptorLayout,
 				.pushConstantRangeCount = (uint32_t)ranges.size(),
 				.pPushConstantRanges = ranges.data(),
 			};
 
-			vkCreatePipelineLayout(VulkanContext::GetLogicalDevice(), &info, VulkanContext::GetAllocator(), &PipelineLayout);
+			vkCreatePipelineLayout(VulkanContext::GetLogicalDevice(), &info, VulkanContext::GetAllocator(), &layout);
 		}
 
 		VkViewport viewport = {
@@ -339,7 +339,7 @@ namespace wc
 
 			.pDepthStencilState = &depthStencil,
 			.pColorBlendState = &colorBlending,
-			.layout = PipelineLayout,
+			.layout = layout,
 			.renderPass = createInfo.renderPass,
 			.subpass = 0,
 			.basePipelineHandle = nullptr,
@@ -353,12 +353,12 @@ namespace wc
 			pipelineInfo.pDynamicState = &dynamicState;
 		}
 
-		vkCreateGraphicsPipelines(VulkanContext::GetLogicalDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, VulkanContext::GetAllocator(), &Pipeline);
+		vkCreateGraphicsPipelines(VulkanContext::GetLogicalDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, VulkanContext::GetAllocator(), &handle);
 
 		for (uint32_t i = 0; i < shaderModules.size(); i++) vkDestroyShaderModule(VulkanContext::GetLogicalDevice(), shaderModules[i], VulkanContext::GetAllocator());
 	}
 
-	void Shader::Create(const ComputeShaderCreateInfo& createInfo)
+	void Pipeline::Create(const ComputePipelineCreateInfo& createInfo)
 	{
 		//if (createInfo.infoPath.size() == 0) WC_CORE_WARN("Shader info for shader with path {} is empty!", createInfo.path);
 
@@ -460,13 +460,13 @@ namespace wc
 				layoutInfo.pNext = &binding_flags;
 			}
 
-			vkCreateDescriptorSetLayout(VulkanContext::GetLogicalDevice(), &layoutInfo, VulkanContext::GetAllocator(), &DescriptorLayout);
+			vkCreateDescriptorSetLayout(VulkanContext::GetLogicalDevice(), &layoutInfo, VulkanContext::GetAllocator(), &descriptorLayout);
 
 			VkPipelineLayoutCreateInfo info = {
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 
 				.setLayoutCount = 1,
-				.pSetLayouts = &DescriptorLayout,
+				.pSetLayouts = &descriptorLayout,
 			};
 
 			VkPushConstantRange range = {
@@ -483,7 +483,7 @@ namespace wc
 				info.pushConstantRangeCount = 1;
 			}
 
-			vkCreatePipelineLayout(VulkanContext::GetLogicalDevice(), &info, VulkanContext::GetAllocator(), &PipelineLayout);
+			vkCreatePipelineLayout(VulkanContext::GetLogicalDevice(), &info, VulkanContext::GetAllocator(), &layout);
 		}
 
 		VkShaderModuleCreateInfo moduleCreateInfo = {
@@ -507,10 +507,10 @@ namespace wc
 		VkComputePipelineCreateInfo pipelineCreateInfo = {
 			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
 			.stage = stage,
-			.layout = PipelineLayout,
+			.layout = layout,
 		};
 
-		vkCreateComputePipelines(VulkanContext::GetLogicalDevice(), VK_NULL_HANDLE, 1, &pipelineCreateInfo, VulkanContext::GetAllocator(), &Pipeline);
+		vkCreateComputePipelines(VulkanContext::GetLogicalDevice(), VK_NULL_HANDLE, 1, &pipelineCreateInfo, VulkanContext::GetAllocator(), &handle);
 
 		vkDestroyShaderModule(VulkanContext::GetLogicalDevice(), shaderModule, VulkanContext::GetAllocator());
 	}

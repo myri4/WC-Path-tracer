@@ -6,20 +6,20 @@
 
 #include "../imgui_backend/imgui_impl_vulkan.h"
 
-namespace blaze
+namespace wc
 {
 	auto BloomPass::GetOutput() { return m_Buffers[2].imageViews[0]; }
 
 	void BloomPass::Init()
 	{
-		m_Shader.Create("assets/shaders/bloom.comp");
+		pipeline.Create("assets/shaders/bloom.comp");
 	}
 
 	void BloomPass::CreateImages(glm::vec2 renderSize, uint32_t mipLevelCount)
 	{
 		glm::uvec2 bloomTexSize = renderSize * 0.5f;
 		bloomTexSize += glm::uvec2(m_ComputeWorkGroupSize - bloomTexSize.x % m_ComputeWorkGroupSize, m_ComputeWorkGroupSize - bloomTexSize.y % m_ComputeWorkGroupSize);
-		m_MipLevels = glm::max(mipLevelCount - 4, 1u);
+		mipLevels = glm::max(mipLevelCount - 4, 1u);
 
 		vk::SamplerSpecification samplerSpec = {
 			.magFilter = vk::Filter::LINEAR,
@@ -28,11 +28,11 @@ namespace blaze
 			.addressModeU = vk::SamplerAddressMode::CLAMP_TO_EDGE,
 			.addressModeV = vk::SamplerAddressMode::CLAMP_TO_EDGE,
 			.addressModeW = vk::SamplerAddressMode::CLAMP_TO_EDGE,
-			.maxLod = float(m_MipLevels),
+			.maxLod = float(mipLevels),
 		};
 
-		m_Sampler.Create(samplerSpec);
-		m_Sampler.SetName("BloomSampler");
+		sampler.Create(samplerSpec);
+		sampler.SetName("BloomSampler");
 
 		for (int i = 0; i < 3; i++)
 		{
@@ -43,7 +43,7 @@ namespace blaze
 				.width = bloomTexSize.x,
 				.height = bloomTexSize.y,
 
-				.mipLevels = m_MipLevels,
+				.mipLevels = mipLevels,
 				.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
 			};
 
@@ -90,7 +90,7 @@ namespace blaze
 					.baseArrayLayer = 0,
 					.baseMipLevel = 0,
 					.layerCount = 1,
-					.levelCount = m_MipLevels,
+					.levelCount = mipLevels,
 				};
 				for (int i = 0; i < 3; i++)
 					m_Buffers[i].image.SetLayout(cmd, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, range);
@@ -99,31 +99,31 @@ namespace blaze
 
 	void BloomPass::SetUp(const vk::ImageView& input)
 	{
-		m_DescriptorSets.reserve(m_MipLevels * 3 - 1);
+		descriptorSets.reserve(mipLevels * 3 - 1);
 
 		uint32_t usingSets = 0;
 
 		auto GenerateDescriptor = [&](const vk::ImageView& outputView, const vk::ImageView& inputView)
 			{
 				VkDescriptorSet* descriptor = nullptr;
-				if (usingSets < m_DescriptorSets.size())
-					descriptor = &m_DescriptorSets[usingSets];
+				if (usingSets < descriptorSets.size())
+					descriptor = &descriptorSets[usingSets];
 				else
 				{
-					descriptor = &m_DescriptorSets.emplace_back();
-					vk::descriptorAllocator.Allocate(*descriptor, m_Shader.DescriptorLayout);
+					descriptor = &descriptorSets.emplace_back();
+					vk::descriptorAllocator.Allocate(*descriptor, pipeline.descriptorLayout);
 				}
 				usingSets++;
 
 				vk::DescriptorWriter writer(*descriptor);
-				writer.BindImage(0, m_Sampler, outputView, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-				writer.BindImage(1, m_Sampler, inputView, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-				writer.BindImage(2, m_Sampler, m_Buffers[2].imageViews[0], VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+				writer.BindImage(0, sampler, outputView, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+				writer.BindImage(1, sampler, inputView, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+				writer.BindImage(2, sampler, m_Buffers[2].imageViews[0], VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 			};
 
 		GenerateDescriptor(m_Buffers[0].imageViews[0], input);
 
-		for (uint32_t currentMip = 1; currentMip < m_MipLevels; currentMip++)
+		for (uint32_t currentMip = 1; currentMip < mipLevels; currentMip++)
 		{
 			// Ping
 			GenerateDescriptor(m_Buffers[1].imageViews[currentMip], m_Buffers[0].imageViews[0]);
@@ -134,15 +134,15 @@ namespace blaze
 
 
 		// First Upsample
-		GenerateDescriptor(m_Buffers[2].imageViews[m_MipLevels - 1], m_Buffers[0].imageViews[0]);
+		GenerateDescriptor(m_Buffers[2].imageViews[mipLevels - 1], m_Buffers[0].imageViews[0]);
 
-		for (int currentMip = m_MipLevels - 2; currentMip >= 0; currentMip--)
+		for (int currentMip = mipLevels - 2; currentMip >= 0; currentMip--)
 			GenerateDescriptor(m_Buffers[2].imageViews[currentMip], m_Buffers[0].imageViews[0]);
 	}
 
 	void BloomPass::Execute(wc::CommandEncoder& cmd, float Threshold, float Knee)
 	{
-		cmd.BindShader(m_Shader);
+		cmd.BindShader(pipeline);
 		uint32_t counter = 0;
 
 		enum
@@ -162,11 +162,11 @@ namespace blaze
 
 		settings.Params = glm::vec4(Threshold, Threshold - Knee, Knee * 2.f, 0.25f / Knee);
 		cmd.PushConstants(settings);
-		cmd.BindDescriptorSet(m_DescriptorSets[counter++]);
+		cmd.BindDescriptorSet(descriptorSets[counter++]);
 		cmd.Dispatch(glm::ceil(glm::vec2(m_Buffers[0].image.GetSize()) / glm::vec2(m_ComputeWorkGroupSize)));
 
 		settings.Mode = Downsample;
-		for (uint32_t currentMip = 1; currentMip < m_MipLevels; currentMip++)
+		for (uint32_t currentMip = 1; currentMip < mipLevels; currentMip++)
 		{
 			glm::vec2 dispatchSize = glm::ceil((glm::vec2)m_Buffers[0].image.GetMipSize(currentMip) / glm::vec2(m_ComputeWorkGroupSize));
 
@@ -174,32 +174,32 @@ namespace blaze
 			settings.LOD = float(currentMip - 1);
 			cmd.PushConstants(settings);
 
-			cmd.BindDescriptorSet(m_DescriptorSets[counter++]);
+			cmd.BindDescriptorSet(descriptorSets[counter++]);
 			cmd.Dispatch(dispatchSize);
 
 			// Pong
 			settings.LOD = float(currentMip);
 			cmd.PushConstants(settings);
 
-			cmd.BindDescriptorSet(m_DescriptorSets[counter++]);
+			cmd.BindDescriptorSet(descriptorSets[counter++]);
 			cmd.Dispatch(dispatchSize);
 		}
 
 		// First Upsample
-		settings.LOD = float(m_MipLevels - 2);
+		settings.LOD = float(mipLevels - 2);
 		settings.Mode = UpsampleFirst;
 		cmd.PushConstants(settings);
 
-		cmd.BindDescriptorSet(m_DescriptorSets[counter++]);
-		cmd.Dispatch(glm::ceil((glm::vec2)m_Buffers[2].image.GetMipSize(m_MipLevels - 1) / glm::vec2(m_ComputeWorkGroupSize)));
+		cmd.BindDescriptorSet(descriptorSets[counter++]);
+		cmd.Dispatch(glm::ceil((glm::vec2)m_Buffers[2].image.GetMipSize(mipLevels - 1) / glm::vec2(m_ComputeWorkGroupSize)));
 
 		settings.Mode = Upsample;
-		for (int currentMip = m_MipLevels - 2; currentMip >= 0; currentMip--)
+		for (int currentMip = mipLevels - 2; currentMip >= 0; currentMip--)
 		{
 			settings.LOD = float(currentMip);
 			cmd.PushConstants(settings);
 
-			cmd.BindDescriptorSet(m_DescriptorSets[counter++]);
+			cmd.BindDescriptorSet(descriptorSets[counter++]);
 			cmd.Dispatch(glm::ceil((glm::vec2)m_Buffers[2].image.GetMipSize(currentMip) / glm::vec2(m_ComputeWorkGroupSize)));
 		}
 	}
@@ -213,23 +213,23 @@ namespace blaze
 			m_Buffers[i].image.Destroy();
 			m_Buffers[i].imageViews.clear();
 		}
-		m_Sampler.Destroy();
+		sampler.Destroy();
 	}
 
 	void BloomPass::Deinit()
 	{
-		m_Shader.Destroy();
+		pipeline.Destroy();
 	}
 
 	void CompositePass::Init()
 	{
-		m_Shader.Create("assets/shaders/composite.comp");
-		vk::descriptorAllocator.Allocate(m_DescriptorSet, m_Shader.DescriptorLayout);
+		pipeline.Create("assets/shaders/composite.comp");
+		vk::descriptorAllocator.Allocate(descriptorSet, pipeline.descriptorLayout);
 	}
 
 	void CompositePass::SetUp(vk::Sampler sampler, vk::ImageView output, vk::ImageView input, vk::ImageView bloomInput)
 	{
-		vk::DescriptorWriter writer(m_DescriptorSet);
+		vk::DescriptorWriter writer(descriptorSet);
 		writer.BindImage(0, sampler, output, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
 			.BindImage(1, sampler, input, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
 			.BindImage(2, sampler, bloomInput, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
@@ -237,8 +237,8 @@ namespace blaze
 
 	void CompositePass::Execute(wc::CommandEncoder& cmd, glm::ivec2 size)
 	{
-		cmd.BindShader(m_Shader);
-		cmd.BindDescriptorSet(m_DescriptorSet);
+		cmd.BindShader(pipeline);
+		cmd.BindDescriptorSet(descriptorSet);
 		struct
 		{
 			uint32_t Bloom;
@@ -250,26 +250,26 @@ namespace blaze
 
 	void CompositePass::Deinit()
 	{
-		m_Shader.Destroy();
+		pipeline.Destroy();
 	}
 
 	void CRTPass::Init()
 	{
-		m_Shader.Create("assets/shaders/crt.comp");
-		vk::descriptorAllocator.Allocate(m_DescriptorSet, m_Shader.DescriptorLayout);
+		pipeline.Create("assets/shaders/crt.comp");
+		vk::descriptorAllocator.Allocate(descriptorSet, pipeline.descriptorLayout);
 	}
 
 	void CRTPass::SetUp(vk::Sampler sampler, vk::ImageView output, vk::ImageView input)
 	{
-		vk::DescriptorWriter writer(m_DescriptorSet);
+		vk::DescriptorWriter writer(descriptorSet);
 		writer.BindImage(0, sampler, output, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
 			.BindImage(1, sampler, input, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	}
 
 	void CRTPass::Execute(wc::CommandEncoder& cmd, glm::ivec2 size, float time)
 	{
-		cmd.BindShader(m_Shader);
-		cmd.BindDescriptorSet(m_DescriptorSet);
+		cmd.BindShader(pipeline);
+		cmd.BindDescriptorSet(descriptorSet);
 		struct {
 			float time = 0.f;
 			uint32_t CRT;
@@ -287,7 +287,7 @@ namespace blaze
 
 	void CRTPass::Deinit()
 	{
-		m_Shader.Destroy();
+		pipeline.Destroy();
 	}
 
 	auto Renderer2D::ScreenToWorld(glm::vec2 coords, float Zoom) const
@@ -418,7 +418,7 @@ namespace blaze
 			memset(flags, 0, sizeof(VkDescriptorBindingFlags) * (std::size(flags) - 1));
 			flags[std::size(flags) - 1] = VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
 
-			wc::ShaderCreateInfo createInfo = {
+			wc::PipelineCreateInfo createInfo = {
 				.renderPass = m_RenderPass,
 				.bindingFlags = flags,
 				.bindingFlagCount = (uint32_t)std::size(flags),
@@ -438,7 +438,7 @@ namespace blaze
 		}
 
 		{
-			wc::ShaderCreateInfo createInfo = {
+			wc::PipelineCreateInfo createInfo = {
 				.renderPass = m_RenderPass,
 
 				.depthTest = true,
@@ -469,7 +469,7 @@ namespace blaze
 			.descriptorSetCount = 1,
 			.pDescriptorCounts = &count,
 		};
-		vk::descriptorAllocator.Allocate(m_DescriptorSet, m_Shader.DescriptorLayout, &set_counts, set_counts.descriptorSetCount);
+		vk::descriptorAllocator.Allocate(m_DescriptorSet, m_Shader.descriptorLayout, &set_counts, set_counts.descriptorSetCount);
 	}
 
 	void Renderer2D::UpdateTextures(const AssetManager& assetManager)
@@ -699,10 +699,10 @@ namespace blaze
 			{
 				renderData.UploadVertexData();
 				m_data.vertexBuffer = renderData.GetVertexBuffer().GetDeviceAddress();
-				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Shader.Pipeline);
-				vkCmdPushConstants(cmd, m_Shader.PipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(m_data), &m_data);
+				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Shader.handle);
+				vkCmdPushConstants(cmd, m_Shader.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(m_data), &m_data);
 
-				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Shader.PipelineLayout, 0, 1, &m_DescriptorSet, 0, nullptr);
+				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Shader.layout, 0, 1, &m_DescriptorSet, 0, nullptr);
 				vkCmdBindIndexBuffer(cmd, renderData.GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 				vkCmdDrawIndexed(cmd, renderData.GetIndexCount(), 1, 0, 0, 0);
 			}
@@ -712,8 +712,8 @@ namespace blaze
 				renderData.UploadLineVertexData();
 				m_data.vertexBuffer = renderData.GetLineVertexBuffer().GetDeviceAddress();
 
-				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_LineShader.Pipeline);
-				vkCmdPushConstants(cmd, m_Shader.PipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(m_data), &m_data);
+				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_LineShader.handle);
+				vkCmdPushConstants(cmd, m_Shader.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(m_data), &m_data);
 
 				vkCmdDraw(cmd, renderData.GetLineVertexCount(), 1, 0, 0);
 			}

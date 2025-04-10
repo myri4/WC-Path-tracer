@@ -1,4 +1,4 @@
-#include "Font.h"
+/*#include "Font.h"
 #include "RenderData.h"
 
 #include "AssetManager.h"
@@ -189,3 +189,4 @@ namespace wc
 		return end - begin;
     }
 }
+*/
