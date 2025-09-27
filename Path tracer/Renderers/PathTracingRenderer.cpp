@@ -26,6 +26,53 @@ void PathTracingRenderer::Init()
 
 	sceneDataBuffer.Allocate(sizeof(SceneData), vk::DEVICE_ADDRESS);
 	sceneDataBuffer.SetName("SceneDataBuffer");
+
+	auto Ground = PushMaterial();
+	Materials[Ground].albedo = glm::vec3(0.8, 0.8, 0.0);
+	Materials[Ground].roughness = 1.f;
+
+	auto Center = PushMaterial();
+	Materials[Center].albedo = glm::vec3(0.7, 0.3, 0.3);
+
+	auto Left = PushMaterial();
+	Materials[Left].emission = glm::vec3(0.8, 0.8, 0.8) * 2.f;
+
+	auto Right = PushMaterial();
+	Materials[Right].SetMetal(glm::vec3(0.8, 0.6, 0.2), 0.75f, 0.02f);
+
+	auto glass = PushMaterial();
+	Materials[glass].SetDielectric(glm::vec3(0.f, 0.5f, 05.f), 0.07f, 1.5f);
+
+
+	Spheres.push_back(Sphere(glm::vec3(0.0, 0.0, -1.0), 0.5, glass));
+	Spheres.push_back(Sphere(glm::vec3(-1.0, 0.0, -1.0), 0.5, Left));
+	Spheres.push_back(Sphere(glm::vec3(1.0, 0.0, -1.0), 0.5, Right));
+	Spheres.push_back(Sphere(glm::vec3(0.f, -100.5f, -1.f), 100.f, Ground));
+
+
+	MaterialsBuffer.Allocate(sizeof(Material) * Materials.size(), vk::DEVICE_ADDRESS); // @TODO: Make this resizeable
+	SpheresBuffer.Allocate(sizeof(Sphere) * Spheres.size(), vk::DEVICE_ADDRESS); // @TODO: Make this resizeable
+
+	UpdateMaterials();
+}
+
+void PathTracingRenderer::UpdateMaterials()
+{
+	vk::StagingBuffer matSB;
+	matSB.Allocate(sizeof(Material) * Materials.size());
+	matSB.SetData(Materials.data(), sizeof(Material) * Materials.size());
+
+	vk::StagingBuffer sphereSB;
+	sphereSB.Allocate(sizeof(Sphere) * Spheres.size());
+	sphereSB.SetData(Spheres.data(), sizeof(Sphere) * Spheres.size());
+
+	vk::SyncContext::ImmediateSubmit([&](VkCommandBuffer commandBuffer) {
+		MaterialsBuffer.SetData(commandBuffer, matSB, sizeof(Material) * Materials.size());
+		SpheresBuffer.SetData(commandBuffer, sphereSB, sizeof(Sphere) * Spheres.size());
+		});
+
+	matSB.Free();
+	sphereSB.Free();
 }
 
 void PathTracingRenderer::CreateScreen(glm::vec2 size)
@@ -73,9 +120,16 @@ void PathTracingRenderer::Render(const Camera& camera)
 	cmd.BindShader(pipeline);
 	cmd.BindDescriptorSet(descriptorSet);
 
-	sceneData.inverseProjection = camera.inverseProjection;
-	sceneData.inverseView = camera.inverseView;
-	sceneData.position = camera.position;
+	sceneData = {
+		.SphereCount = (uint32_t)Spheres.size(),
+		.inverseProjection = camera.inverseProjection,
+		.inverseView = camera.inverseView,
+		.position = camera.position,
+		.Samples = samples,
+		.MaxBounceCount = MaxBounceCount,
+		.RenderedFramesCount = RenderedFramesCount,
+	};
+	RenderedFramesCount++;
 
 	vk::StagingBuffer stagingBuffer;
 	stagingBuffer.Allocate(sizeof(SceneData));
@@ -90,8 +144,12 @@ void PathTracingRenderer::Render(const Camera& camera)
 	struct
 	{
 		VkDeviceAddress sdp;
+		VkDeviceAddress mbp;
+		VkDeviceAddress sphereBP;
 	}data;
 	data.sdp = sceneDataBuffer.GetDeviceAddress();
+	data.mbp = MaterialsBuffer.GetDeviceAddress();
+	data.sphereBP = SpheresBuffer.GetDeviceAddress();
 	cmd.PushConstants(data);
 
 	cmd.Dispatch(glm::ceil((glm::vec2)renderSize / glm::vec2(ComputeWorkGroupSize)));
@@ -104,5 +162,7 @@ void PathTracingRenderer::Deinit()
 	pipeline.Destroy();
 	screenSampler.Destroy();
 
+	MaterialsBuffer.Free();
+	SpheresBuffer.Free();
 	sceneDataBuffer.Free();
 }

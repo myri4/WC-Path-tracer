@@ -187,8 +187,8 @@ namespace vk
 		VkImageMemoryBarrier imageMemoryBarrier = {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 			.srcAccessMask = srcAccessMask,
+			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 			.dstAccessMask = dstAccessMask,
 			.oldLayout = oldImageLayout,
 			.newLayout = newImageLayout,
@@ -224,32 +224,30 @@ namespace vk
 		VkPipelineStageFlags srcStageMask,
 		VkPipelineStageFlags dstStageMask)
 	{
-		VkImageMemoryBarrier imageMemoryBarrier = GenerateImageMemoryBarier(m_Handle, oldImageLayout, newImageLayout, subresourceRange);
+		auto imageMemoryBarrier = GenerateImageMemoryBarier(m_Handle, oldImageLayout, newImageLayout, subresourceRange);
 
 		vkCmdPipelineBarrier(cmd, srcStageMask, dstStageMask, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
 	}
 
 	// Fixed sub resource on first mip level and layer
 	void Image::SetLayout(
-		const VkCommandBuffer& cmd,
-		const VkImageAspectFlags& aspectMask,
-		const VkImageLayout& oldImageLayout,
-		const VkImageLayout& newImageLayout,
-		const VkPipelineStageFlags& srcStageMask,
-		const VkPipelineStageFlags& dstStageMask)
+		VkCommandBuffer cmd,
+		VkImageAspectFlags aspectMask,
+		VkImageLayout oldImageLayout,
+		VkImageLayout newImageLayout,
+		VkPipelineStageFlags srcStageMask,
+		VkPipelineStageFlags dstStageMask)
 	{
-		VkImageSubresourceRange subresourceRange = {
+		SetLayout(cmd, oldImageLayout, newImageLayout, {
 			.aspectMask = aspectMask,
 			.levelCount = mipLevels,
 			.layerCount = layers,
-		};
-		SetLayout(cmd, oldImageLayout, newImageLayout, subresourceRange, srcStageMask, dstStageMask);
+			}, srcStageMask, dstStageMask);
 	}
 
 	VkSubresourceLayout Image::SubresourceLayout(const VkImageAspectFlagBits& aspectMask)
 	{
-		VkImageSubresource subResource{};
-		subResource.aspectMask = aspectMask;
+		VkImageSubresource subResource{ .aspectMask = aspectMask };
 		VkSubresourceLayout subResourceLayout;
 
 		vkGetImageSubresourceLayout(VulkanContext::GetLogicalDevice(), m_Handle, &subResource, &subResourceLayout);

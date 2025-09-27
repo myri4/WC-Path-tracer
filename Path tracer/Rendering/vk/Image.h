@@ -86,12 +86,12 @@ namespace vk
 
         // Fixed sub resource on first mip level and layer
         void SetLayout(
-            const VkCommandBuffer& cmd,
-            const VkImageAspectFlags& aspectMask,
-            const VkImageLayout& oldImageLayout,
-            const VkImageLayout& newImageLayout,
-            const VkPipelineStageFlags& srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-            const VkPipelineStageFlags& dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+            VkCommandBuffer cmd,
+            VkImageAspectFlags aspectMask,
+            VkImageLayout oldImageLayout,
+            VkImageLayout newImageLayout,
+            VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 
         VkSubresourceLayout SubresourceLayout(const VkImageAspectFlagBits& aspectMask = VK_IMAGE_ASPECT_COLOR_BIT);
 

@@ -70,12 +70,14 @@ bool allowInput = true;
 
 bool showEditor = true;
 bool showSceneProperties = true;
-bool showEntities = true;
+bool showSceneObjectsPanel = true;
 bool showProperties = true;
 bool showConsole = true;
 bool showAssets = true;
-bool showDebugStats = false;
-bool showStyleEditor = false;
+bool showDebugStats = true;
+
+uint32_t selectedSphere = 0;
+//uint32_t selectedMaterial = 0;
 
 void SaveStringToFile(const std::filesystem::path& filePath, const std::string& content)
 {
@@ -135,6 +137,7 @@ glm::ivec2 prevPos;
 
 void InputEditor()
 {
+	bool moved = false;
 	if (allowInput)
 	{
 		auto windSize = Globals.window.GetSize();
@@ -145,33 +148,48 @@ void InputEditor()
 		{
 			camera.position.x += camera.direction.x * MovementSpeed;
 			camera.position.z += camera.direction.z * MovementSpeed;
+			moved = true;
 		}
 
 		else if (Key::GetKey(Key::S)) 
 		{
 			camera.position.x -= camera.direction.x * MovementSpeed;
 			camera.position.z -= camera.direction.z * MovementSpeed;
+			moved = true;
 		}
 		
 		if (Key::GetKey(Key::A))
 		{
 			camera.position.x -= glm::cos(yaw90) * MovementSpeed;
 			camera.position.z -= glm::sin(yaw90) * MovementSpeed;
+			moved = true;
 		}
 		else if (Key::GetKey(Key::D))
 		{
 			camera.position.x += glm::cos(yaw90) * MovementSpeed;
 			camera.position.z += glm::sin(yaw90) * MovementSpeed;
+			moved = true;
 		}
 
 		if (Key::GetKey(Key::Space))
+		{
 			camera.position.y += MovementSpeed;
+			moved = true;
+		}
 
 		else if (Key::GetKey(Key::LeftShift))
+		{
 			camera.position.y -= MovementSpeed;
+			moved = true;
+		}
 
 
-		if (Key::GetKey(Key::C)) { camera.fov = 10.f; MouseSensitivity = 18; }
+		if (Key::GetKey(Key::C)) 
+		{ 
+			camera.fov = 10.f; 
+			MouseSensitivity = 18;
+			moved = true;
+		}
 		else
 		{
 			MouseSensitivity = 5.f;
@@ -186,8 +204,11 @@ void InputEditor()
 			camera.yaw -= (prevPos.x - pos.x) * ms;
 
 			camera.pitch += (prevPos.y - pos.y) * ms;
+			moved = true;
 		}
 		prevPos = pos;
+
+		
 
 		/*Mouse*/
 		/*uint16_t xt, yt;
@@ -249,11 +270,17 @@ void InputEditor()
 			camera.UpdateView();
 		}*/
 	}
+
+	if (moved)
+		PathTracer.RenderedFramesCount = 0;
+	else 
+		PathTracer.RenderedFramesCount++;
 }
 
 void UpdateEditor() 
 {
 	camera.Update(ViewPortSize.x / ViewPortSize.y);
+	PathTracer.UpdateMaterials();
 	PathTracer.Render(camera);
 }
 
@@ -328,22 +355,36 @@ void UI_Editor()
 	ImGui::End();
 }
 
-void UI_Entities()
+void UI_SceneObjects()
 {
-	if (ImGui::Begin("Entities", &showEntities, ImGuiWindowFlags_MenuBar))
+	if (ImGui::Begin("Scene objects", &showSceneObjectsPanel))
 	{
-
+		for (int i = 0; i < PathTracer.Spheres.size(); i++)
+		{
+			if (ImGui::Button(std::format("Sphere {}", i).c_str())) selectedSphere = i;
+		}
 	}
 	ImGui::End();
 }
 
 void UI_Properties() 
 {
-	if (ImGui::Begin("Properties", &showEntities, ImGuiWindowFlags_MenuBar))
+	if (ImGui::Begin("Properties", &showProperties))
 	{
-		UI::Drag3("Camera position", glm::value_ptr(camera.position));
-		UI::Drag("Yaw", camera.yaw);
-		UI::Drag("Pitch", camera.pitch);
+		auto& sphere = PathTracer.Spheres[selectedSphere];
+		auto& material = PathTracer.Materials[sphere.mat];
+		UI::Separator("Sphere");
+		UI::Drag3("Position", glm::value_ptr(sphere.position), 0.1f);
+		UI::Drag("Radius", sphere.radius, 0.1f);
+
+		UI::Separator("Material");
+		ImGui::ColorEdit3("Albedo", glm::value_ptr(material.albedo), 0.1f);
+		ImGui::ColorEdit3("Emission", glm::value_ptr(material.emission), 0.1f);
+
+		float dragSpeed = 0.01f;
+		UI::Drag("Metallic", material.metallic, dragSpeed, 0.001f, 1.0f);
+		UI::Drag("Roughness", material.roughness, dragSpeed, 0.001f, 1.0f);
+		UI::Drag("Index of refraction", material.ior, dragSpeed);
 	}
 	ImGui::End();
 }
@@ -532,6 +573,20 @@ void UI_DebugStats()
 	ImGui::End();
 }
 
+void UI_SceneProperties()
+{
+	if (ImGui::Begin("Scene properties", &showSceneProperties, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		UI::Drag("Samples", PathTracer.samples, 0.1f);
+		UI::Drag("Max bounce count", PathTracer.MaxBounceCount, 0.1f);
+		UI::Separator("Camera");
+		UI::Drag3("Position", glm::value_ptr(camera.position), 0.1f);
+		UI::Drag("Yaw", camera.yaw, 0.1f);
+		UI::Drag("Pitch", camera.pitch, 0.1f);
+	}
+	ImGui::End();
+}
+
 void UIEditor()
 {
 	const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -565,12 +620,11 @@ void UIEditor()
 			{
 				ImGui::MenuItem("Editor", nullptr, &showEditor);
 				ImGui::MenuItem("Scene properties", nullptr, &showSceneProperties);
-				ImGui::MenuItem("Entities", nullptr, &showEntities);
+				ImGui::MenuItem("Scene objects panel", nullptr, &showSceneObjectsPanel);
 				ImGui::MenuItem("Properties", nullptr, &showProperties);
 				ImGui::MenuItem("Console", nullptr, &showConsole);
 				ImGui::MenuItem("Assets", nullptr, &showAssets);
 				ImGui::MenuItem("Debug Statistics", nullptr, &showDebugStats);
-				ImGui::MenuItem("Style Editor", nullptr, &showStyleEditor);
 
 				ImGui::EndMenu();
 			}
@@ -579,8 +633,8 @@ void UIEditor()
 		}
 
 		if (showEditor) UI_Editor();
-		//if (showSceneProperties) UI_SceneProperties();
-		//if (showEntities) UI_Entities();
+		if (showSceneProperties) UI_SceneProperties();
+		if (showSceneObjectsPanel) UI_SceneObjects();
 		if (showProperties) UI_Properties();
 		if (showConsole) UI_Console();
 		//if (showAssets) UI_Assets();

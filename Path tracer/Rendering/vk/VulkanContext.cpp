@@ -193,10 +193,7 @@ namespace VulkanContext
 #endif
 
 			debugCreateInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-			debugCreateInfo.pfnUserCallback = [](VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-				VkDebugUtilsMessageTypeFlagsEXT messageType,
-				const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-				void* pUserData) -> VkBool32 VKAPI_CALL
+			debugCreateInfo.pfnUserCallback = [](VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) -> VkBool32 VKAPI_CALL
 				{
 					std::string type;
 					switch (messageType)
@@ -232,7 +229,7 @@ namespace VulkanContext
 						break;
 
 					case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
-						//WC_CORE_TRACE(pCallbackData->pMessage);
+						WC_CORE_TRACE("[{}] {}", type, pCallbackData->pMessage);
 						break;
 					}
 
@@ -388,22 +385,22 @@ namespace VulkanContext
 			else
 				WC_CORE_WARN("Sampler anisotropy feature is not supported")
 
-				if (supportedFeatures.independentBlend)
-					deviceFeatures.independentBlend = true;
-				else
-					WC_CORE_WARN("Independent blend feature is not supported")
+			if (supportedFeatures.independentBlend)
+				deviceFeatures.independentBlend = true;
+			else
+				WC_CORE_WARN("Independent blend feature is not supported")
 
-				VkPhysicalDeviceVulkan12Features features12 = {
-					.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+			VkPhysicalDeviceVulkan12Features features12 = {
+				.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
 
-					.shaderSampledImageArrayNonUniformIndexing = true,
-					.descriptorBindingPartiallyBound = true,
-					.descriptorBindingVariableDescriptorCount = true,
-					.runtimeDescriptorArray = true,
-					.scalarBlockLayout = true,
-					.timelineSemaphore = true,
-					.bufferDeviceAddress = true,
-				};
+				.shaderSampledImageArrayNonUniformIndexing = true,
+				.descriptorBindingPartiallyBound = true,
+				.descriptorBindingVariableDescriptorCount = true,
+				.runtimeDescriptorArray = true,
+				.scalarBlockLayout = true,
+				.timelineSemaphore = true,
+				.bufferDeviceAddress = true,
+			};
 
 
 			std::set<uint32_t> uniqueQueueFamilies = {

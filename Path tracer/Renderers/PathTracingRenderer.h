@@ -52,6 +52,43 @@ struct SceneData
 	mat4 inverseProjection;
 	mat4 inverseView;
 	vec3 position;
+	uint32_t MaxBounceCount = 3;
+	uint32_t Samples = 1;
+	uint32_t SphereCount = 0;
+	uint32_t RenderedFramesCount = 0;
+};
+
+struct Material
+{
+	vec3 albedo;
+	vec3 emission;
+
+	float metallic = 0.0f;
+	float roughness = 0.0f;
+	float ior = 1.0f;
+
+	void SetMetal(vec3 a, float r, float sp)
+	{
+		albedo = a;
+		roughness = r;
+		metallic = sp;
+	}
+
+	void SetDielectric(vec3 color, float r, float index_of_refraction)
+	{
+		albedo = color;
+		roughness = r;
+		ior = index_of_refraction;
+	}
+};
+
+using MaterialID = uint32_t;
+
+struct Sphere
+{
+	vec3 position;
+	float radius;
+	MaterialID mat;
 };
 
 struct PathTracingRenderer
@@ -72,6 +109,17 @@ struct PathTracingRenderer
 	SceneData sceneData;
 	vk::Buffer sceneDataBuffer;
 
+
+	std::vector<Material> Materials;
+	vk::Buffer MaterialsBuffer;
+
+	std::vector<Sphere> Spheres;
+	vk::Buffer SpheresBuffer;
+
+	uint32_t samples = 1;
+	uint32_t MaxBounceCount = 3;
+	uint32_t RenderedFramesCount = 0;
+
 	void Init();
 
 	void CreateScreen(vec2 size);
@@ -82,5 +130,13 @@ struct PathTracingRenderer
 
 	void Render(const Camera& camera);
 
+	void UpdateMaterials();
+
 	void Deinit();
+
+	MaterialID PushMaterial()
+	{
+		Materials.push_back(Material());
+		return Materials.size() - 1;
+	}
 };

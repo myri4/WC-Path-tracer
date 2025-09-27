@@ -205,10 +205,7 @@ namespace vk
 
 		void Push(const T& object) { m_Data.emplace_back(object); }
 
-		void Reset()
-		{
-			m_Data.clear();
-		}
+		void Reset() { m_Data.clear(); }
 
 		void Free(bool reset = true)
 		{
