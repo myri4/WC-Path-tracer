@@ -1,0 +1,31 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "preLaunchTask": "build_debug",
+            "visualizerFile": "C:/D/Compilers/jai/editor_support/msvc/jai.natvis",
+            "program": "${workspaceFolder}/run_tree/path_tracer.exe",
+            "args": [],
+            "stopAtEntry": false,  // auto-pause debugger when program starts. sometimes useful, up to you
+            "cwd": "${workspaceFolder}/run_tree",
+            "environment": [],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Release",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "preLaunchTask": "build_release",
+            "visualizerFile": "C:/D/Compilers/jai/editor_support/msvc/jai.natvis",
+            "program": "${workspaceFolder}/run_tree/path_tracer.exe",
+            "args": [],
+            "stopAtEntry": false,  // auto-pause debugger when program starts. sometimes useful, up to you
+            "cwd": "${workspaceFolder}/run_tree",
+            "environment": [],
+            "console": "newExternalWindow"  // this is the least lame option IMO, you can try other values here if you prefer. edit the string in VS Code to get auto-completion for the various options.
+        }
+    ]
+}

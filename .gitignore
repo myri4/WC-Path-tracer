@@ -1,9 +1,11 @@
+*.pdb
+*.exe
+.build
+run_tree/data/assets/shaders
 
-*.db
-*.ipch
-*.log
-out/
-.vs/
-.idea
-build/
-Path tracer/workdir/assets/shaders
+modules/box2d/
+modules/glfw/
+modules/ImGui2/windows
+modules/spirv_cross/
+modules/Vulkan2/*
+!modules/Vulkan2/generate.jai

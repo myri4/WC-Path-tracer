@@ -1,0 +1,127 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build_debug",
+            "command": "jai",
+            "args": [
+                "src/build.jai",      // which .jai file to build
+                //"scripts/generate_bindings.jai",      // which .jai file to build
+            ],
+            "type": "cppbuild",  // Important! Speed (other modes have ~2 second delay between build and run)
+            "presentation": {
+                "echo": true,
+                "reveal": "never",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": [
+                {
+                    "severity": "error",
+                    "fileLocation": "absolute",
+                    "pattern": [
+                        {
+                            "regexp": "^(.*):(\\d+),(\\d+).*Error: (.*)$",
+                            "file": 1,
+                            "line": 2,
+                            "column": 3,
+                            "message": 4
+                        }
+                    ],
+                    "owner": "jai"
+                },
+                {
+                    "severity": "error",
+                    "fileLocation": "absolute",
+                    "pattern": [
+                        {
+                            "regexp": "^(.*):(\\d+),(\\d+).*Internal compiler error: (.*)$",
+                            "file": 1,
+                            "line": 2,
+                            "column": 3,
+                            "message": 4
+                        }
+                    ],
+                    "owner": "jai"
+                },
+                {
+                    "severity": "warning",
+                    "fileLocation": "absolute",
+                    "pattern": [
+                        {
+                            "regexp": "^(.*):(\\d+),(\\d+).*Warning: (.*)$",
+                            "file": 1,
+                            "line": 2,
+                            "column": 3,
+                            "message": 4
+                        }
+                    ],
+                    "owner": "jai"
+                },
+                {
+                    "severity": "info",
+                    "fileLocation": "absolute",
+                    "pattern": [
+                        {
+                            "regexp": "^(.*):(\\d+),(\\d+).*Info: (.*)$",
+                            "file": 1,
+                            "line": 2,
+                            "column": 3,
+                            "message": 4
+                        }
+                    ],
+                    "owner": "jai"
+                },
+                {
+                    "severity": "info",
+                    "fileLocation": "absolute",
+                    "pattern": [
+                        {
+                            "regexp": "^(.*):(\\d+),(\\d+):\\s*(.*)$",
+                            "file": 1,
+                            "line": 2,
+                            "column": 3,
+                            "message": 4
+                        }
+                    ],
+                    "owner": "jai"
+                },
+                {
+                    "severity": "info",
+                    "fileLocation": "absolute",
+                    "pattern": [
+                        {
+                            "regexp": "^(.*)\\((.*):(\\d+)\\)$",
+                            "file": 2,
+                            "line": 3,
+                            "message": 1,
+                        }
+                    ],
+                    "owner": "jai"
+                },
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true,
+            }            
+        },
+        {
+            "label": "build_release",
+            "type": "cppbuild",  // Important! Speed (other modes have ~2 second delay between build and run)
+            "command": "jai",
+            "args": [
+                "src/build.jai",
+            ],
+            "presentation": {
+                "echo": true,               // show build output
+                "reveal": "never",          // don't show build output unless there's an error
+                "focus": true,             
+                "panel": "shared",          // just use a single build output panel
+                "showReuseMessage": false,  // don't print dumb shit
+                "clear": true               // clear re-used output window between each build
+            }
+        }
+    ]
+}
