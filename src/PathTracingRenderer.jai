@@ -11,18 +11,21 @@ Camera :: struct {
 
 	fov: float = 90.0;
 
-	projection: Matrix4;
-	inverseProjection: Matrix4;
-	inverseView: Matrix4;
+	projection: Matrix4; @NoDisplay
+	view: Matrix4; @NoDisplay
+
+	inverseProjection: Matrix4; @NoDisplay
+	inverseView: Matrix4; @NoDisplay
 }
 
-Update :: (using cam: *Camera, aspectRatio: float = 16.0 / 9.0){
+Update :: (using cam: *Camera, aspectRatio: float = 16.0 / 9.0) {
 	rYaw := radians(yaw);
 	rPitch := radians(pitch);
 	cosPitch := cos(rPitch);
 	direction = normalize(Vector3.{ cos(rYaw) * cosPitch, sin(rPitch), sin(rYaw) * cosPitch });
 
-	success:, inverseView = inverse(transpose(make_look_at_matrix(position, position + direction, .{0.0, 1.0, 0.0}, false)));
+	view = transpose(make_look_at_matrix(position, position + direction, .{0.0, 1.0, 0.0}, false));
+	success:, inverseView = inverse(view);
 	if !success log_error("Failed to inverse a view matrix\n");
 
 	projection = transpose(make_projection_matrix(radians(fov), aspectRatio, 0.1, 100.0));
@@ -42,12 +45,12 @@ SceneData :: struct {
 }
 
 Material :: struct {
-	albedo: Vector3;
-	emission: Vector3;
+	albedo: Vector3; @Color @Name=Albedo
+	emission: Vector3; @Color @Name=Emission
 
-	metallic: float;
-	roughness: float;
-	ior: float = 1.0;
+	metallic: float; @Name=Metallic @Range[min=0,max=1]
+	roughness: float; @Name=Roughness @Range[min=0,max=1]
+ 	ior: float = 1.0; @Name=Index_of_refraction @Range[min=1]
 }
 
 SetMetal :: (using mat: *Material, a: Vector3, r: float, sp: float) {
@@ -65,32 +68,32 @@ SetDielectric :: (using mat: *Material, color: Vector3, r: float, index_of_refra
 MaterialID :: u32;
 
 Sphere :: struct {
-	position: Vector3;
-	radius: float;
-	mat: MaterialID;
+	position: Vector3; @Name=Position
+	radius: float; @Name=Radius
+	mat: MaterialID; @NoDisplay
 }
 
 PathTracingRenderer :: struct {
-	renderSize: Vector2;
+	renderSize: Vector2; @NoEdit
 
-	pipeline: vk.Pipeline;
-	descriptorSet: VkDescriptorSet;
-	ImguiImageID: VkDescriptorSet;
+	pipeline: vk.Pipeline; @NoDisplay
+	descriptorSet: VkDescriptorSet; @NoDisplay
+	ImguiImageID: VkDescriptorSet; @NoDisplay
 
-	outputImage: vk.Image;
-	outputImageView: VkImageView;
+	outputImage: vk.Image; @NoDisplay
+	outputImageView: VkImageView; @NoDisplay
 
-	screenSampler: VkSampler;
+	screenSampler: VkSampler; @NoDisplay
 
-	computeCmd: [vk.FRAME_OVERLAP]VkCommandBuffer;
+	computeCmd: [vk.FRAME_OVERLAP]VkCommandBuffer; @NoDisplay
 
-	sceneData: SceneData;
-	sceneDataBuffer: vk.Buffer;
+	sceneData: SceneData; @NoDisplay
+	sceneDataBuffer: vk.Buffer; @NoDisplay
 
 
-	Materials: DBufferManager(Material, VkBufferUsageFlagBits.SHADER_DEVICE_ADDRESS_BIT.(u32));
+	Materials: DBufferManager(Material, VkBufferUsageFlagBits.SHADER_DEVICE_ADDRESS_BIT.(u32)); @NoDisplay
 
-	Spheres: DBufferManager(Sphere, VkBufferUsageFlagBits.SHADER_DEVICE_ADDRESS_BIT.(u32));
+	Spheres: DBufferManager(Sphere, VkBufferUsageFlagBits.SHADER_DEVICE_ADDRESS_BIT.(u32)); @NoDisplay
 
 	samples: u32 = 1;
 	MaxBounceCount: u32 = 3;
@@ -149,9 +152,6 @@ Init :: (using renderer: *PathTracingRenderer) {
 	Materials.data[Ground].albedo = .{0.8, 0.8, 0.0};
 	Materials.data[Ground].roughness = 1.0;
 
-	Center := PushMaterial(renderer);
-	Materials.data[Center].albedo = .{0.7, 0.3, 0.3};
-
 	Left := PushMaterial(renderer);
 	Materials.data[Left].emission = .{0.8, 0.8, 0.8} * 2.0;
 
@@ -159,7 +159,7 @@ Init :: (using renderer: *PathTracingRenderer) {
 	SetMetal(*Materials.data[Right], .{0.8, 0.6, 0.2}, 0.75, 0.02);
 
 	glass := PushMaterial(renderer);
-	SetDielectric(*Materials.data[glass], .{0.0, 0.5, 5.0}, 0.07, 1.5);
+	SetDielectric(*Materials.data[glass], .{0.0, 0.5, 1.0}, 0.07, 1.5);
 
 
 	append(*Spheres.data, .{.{0.0, 0.0, -1.0}, 0.5, glass});
@@ -216,6 +216,7 @@ CreateScreen :: (using renderer: *PathTracingRenderer, size: Vector2) {
 DestroyScreen :: (using renderer: *PathTracingRenderer) {
 	Destroy(*outputImage);
 	Destroy(*outputImageView);
+	ImGui.ImplVulkan_RemoveTexture(ImguiImageID);
 }
 
 Resize :: (using renderer: *PathTracingRenderer, size: Vector2) {

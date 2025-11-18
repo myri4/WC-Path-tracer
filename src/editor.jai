@@ -20,6 +20,7 @@ ViewPortSize := Vector2.{1.0, 1.0};
 
 camera: Camera;
 MouseSensitivity: float = 5.0;
+gizmoOp := ImGuizmo.OPERATION.TRANSLATE;
 
 pathTracer: PathTracingRenderer;
 
@@ -156,10 +157,39 @@ UI_SceneViewer :: () {
 			ResizeEditor(ViewPortSize);
 		}
 
+        allowedSelect := !ImGuizmo.IsOver() && !ImGuizmo.IsUsing();
+		if selectedSphere == -1 allowedSelect = true;
+
 		WindowPos = ImGui.GetWindowPos() + ImGui.GetCursorPos();
 		RenderSize := WindowPos + availSize;
 
 		GetWindowDrawList().AddImage(GetWindowDrawList(), .{_TexID = xx pathTracer.ImguiImageID}, WindowPos, RenderSize);
+
+        projection := camera.projection;
+
+		ImGuizmo.SetDrawlist();
+		ImGuizmo.SetRect(WindowPos.x, WindowPos.y, availSize.x, availSize.y);
+		if selectedSphere != -1 {
+			sph := *pathTracer.Spheres.data[selectedSphere];
+			world_transform := transpose(make_translation_matrix4(sph.position));
+
+			snap := float.[0.5, 0.5, 0.5];
+			if ImGuizmo.Manipulate(
+				xx *camera.view,
+				xx *projection,
+				gizmoOp,
+				.WORLD,
+				xx *world_transform,
+				null,
+				ifx ImGui.IsKeyDown(.LeftCtrl) snap.data else null
+			) {
+                pathTracer.RenderedFramesCount = 0;
+				translation:, rotation:, scale: Vector3;
+				ImGuizmo.DecomposeMatrixToComponents(xx *world_transform, xx *translation, xx *rotation, xx *scale);
+
+				sph.position = translation;
+			}
+		}
 	}
 	End();
 	PopStyleVar(1);
@@ -225,7 +255,7 @@ UI_SceneObjects :: () {
                     if MenuItem("Ground") {
 						print("@TODO: Implement\n");
                         //append(*entities, .{type = .Ground, position = .{camera.position.x, camera.position.y, 0.0}, size = .{0.5, 0.5}});
-                        //selectedEntity = cast(s32)(entities.count - 1);
+                        //selectedSphere = cast(s32)(entities.count - 1);
                         CloseCurrentPopup();
                     }
 
@@ -243,33 +273,20 @@ UI_SceneObjects :: () {
 UI_Properties :: () {
 	if Begin("Properties", *showProperties) {
 		sphere := *pathTracer.Spheres.data[selectedSphere];
-		material := *pathTracer.Materials.data[sphere.mat];
 		SeparatorText("Sphere");
-		DragButton3("Position", *sphere.position);
-		Drag("Radius", *sphere.radius, 0.1);
+		EditStruct(sphere);
 
 		SeparatorText("Material");
-		ColorEdit3("Albedo", *material.albedo.component);
-		ColorEdit3("Emission", *material.emission.component);
-
-		dragSpeed: float = 0.01;
-		minVal := 0.001;
-		maxVal := 1.0;
-		Drag("Metallic", *material.metallic, dragSpeed, *minVal, *maxVal);
-		Drag("Roughness", *material.roughness, dragSpeed, *minVal, *maxVal);
-		Drag("Index of refraction", *material.ior, dragSpeed);
+		EditStruct(*pathTracer.Materials.data[sphere.mat]);
 	}
 	End();
 }
 
 UI_SceneProperties :: () {
 	if Begin("Scene properties", *showSceneProperties, .NoBackground | .AlwaysAutoResize) {
-		Drag("Samples", *pathTracer.samples, 0.1);
-		Drag("Max bounce count", *pathTracer.MaxBounceCount, 0.1);
+		EditStruct(*pathTracer);
 		SeparatorText("Camera");
-		DragButton3("Position", *camera.position);
-		Drag("Yaw", *camera.yaw, 0.1);
-		Drag("Pitch", *camera.pitch, 0.1);
+		EditStruct(*camera);
 	}
 	End();
 }
@@ -348,14 +365,10 @@ UI_Editor :: () {
 		if showSceneProperties UI_SceneProperties();
 		if showSceneObjectsPanel UI_SceneObjects();
 		if showProperties UI_Properties();
-		//if (showAssets) UI_Assets();
 		if showDebugStats UI_DebugStats();
 	}
 	End();
 }
-
-
-
 
 DrawBgRows :: (itemSpacingY: float32 = -1.0) {
 	if itemSpacingY > -1 PushStyleVarY(.ItemSpacing, itemSpacingY);
@@ -400,6 +413,136 @@ DrawBgRows :: (itemSpacingY: float32 = -1.0) {
 
 	draw_list.PopClipRect(draw_list);
 	if itemSpacingY > -1 PopStyleVar();
+}
+
+EditStruct :: (structValue: *$T) {
+    info := type_info(T);
+    if info.type != .STRUCT  assert(false, "Trying to edit non struct stuff");
+    struct_info := cast(*Type_Info_Struct)info;
+    if BeginTable("properties", 2, .Resizable | .BordersInnerV | .SizingStretchProp) {
+        TableSetupColumn("Label", .WidthFixed);
+        TableSetupColumn("Value", .WidthStretch);
+        for member : struct_info.members {
+            for note : member.notes {
+                if note == "NoDisplay"
+                    continue member;
+            }
+            member_ptr := (structValue).(*u8) + member.offset_in_bytes;
+            EditStructMember(member_ptr, *member);
+        }
+        EndTable();
+    }
+}
+
+EditStructMember :: (data: *void, memberInfo: *Type_Info_Struct_Member, dragSpeed: float = 0.1) {
+	push_allocator(temp);
+	defer reset_temporary_storage();
+    name := memberInfo.name;
+    typeInfo := memberInfo.type;
+    noEdit := false;
+    hasRange := false;
+    minValue: float64;
+    maxValue: float64;
+    
+    for note : memberInfo.notes {
+        if starts_with(note, "Name=") { 
+            name = copy_string(slice(note, 5, note.count - 5));
+            replace_chars(name, "_", #char " ");
+        }
+        else if note == "NoEdit" { noEdit = true; }
+        else if starts_with(note, "Range[") {
+            hasRange = true;
+            content := slice(note, 6, note.count - 7); // Remove "Range[" and "]"
+            parts := split(content, ",");
+            for part : parts {
+                trimmed := trim(part);
+                if starts_with(trimmed, "min=") {
+                    min_str := slice(trimmed, 4, trimmed.count - 4);
+                    minValue = string_to_float64(min_str);
+                } 
+				else if starts_with(trimmed, "max=") {
+                    max_str := slice(trimmed, 4, trimmed.count - 4);
+                    maxValue = string_to_float64(max_str);
+                }
+            }
+        }
+    }
+    
+    TableNextRow();
+    TableNextColumn();
+    AlignTextToFramePadding();
+    Text(name);
+    TableNextColumn();
+    
+    SetNextItemWidth(-FLOAT32_MIN);
+    
+    if noEdit {
+        Text("%", Any.{type = typeInfo, value_pointer = data});
+    } else {
+        if typeInfo.type == {
+            case .INTEGER;
+                if hasRange {
+                    min_int := cast(s64)minValue;
+                    max_int := cast(s64)maxValue;
+                    SliderScalar(tprint("##%", name).data, ImGui.GetDataType(typeInfo), data, *min_int, *max_int);
+                } else {
+                    DragScalar(tprint("##%", name).data, ImGui.GetDataType(typeInfo), data, dragSpeed);
+                }
+            case .FLOAT;
+                if hasRange {
+                    min_float := cast(float32)minValue;
+                    max_float := cast(float32)maxValue;
+                    SliderScalar(tprint("##%", name).data, ImGui.GetDataType(typeInfo), data, *min_float, *max_float);
+                } else {
+                    DragScalar(tprint("##%", name).data, ImGui.GetDataType(typeInfo), data, dragSpeed);
+                }
+            case .BOOL;
+                Checkbox(tprint("##%", name).data, cast(*bool) data);
+            case .STRUCT;
+                struct_info := cast(*Type_Info_Struct) typeInfo;
+                if struct_info.name == {
+                    case "Vector2";
+                        DragButton2(name, data, dragSpeed = dragSpeed);
+                    case "Vector3";
+                        color := false;
+                        for note : memberInfo.notes {
+                            if note == "Color" {
+                                color = true;
+                                break;
+                            }
+                        }
+                        if color 
+                            ColorEdit3(tprint("##%", name).data, data, .Float);
+                        else 
+                            DragButton3(name, data, dragSpeed = dragSpeed);
+                    case "Vector4";
+                        color := false;
+                        for note : memberInfo.notes {
+                            if note == "Color" {
+                                color = true;
+                                break;
+                            }
+                        }
+                        if color ColorEdit4(tprint("##%", name).data, data);
+                        else DragFloat4(tprint("##%", name).data, data, dragSpeed);
+                    case;
+                        if TreeNode(tprint("WARNING!!! %##%", name, name).data) {
+                            if BeginTable(tprint("nested_%", name).data, 2, .SizingStretchProp | .BordersInnerV) {
+                                TableSetupColumn("Label", .WidthFixed);
+                                TableSetupColumn("Value", .WidthStretch);
+                                for member : struct_info.members {
+                                    member_ptr := cast(*u8) data + member.offset_in_bytes;
+                                    EditStructMember(member_ptr, *member, dragSpeed);
+                                }
+                                EndTable();
+                            }
+                            TreePop();
+                        }
+                }
+            case;
+                Text("% (unsupported type: %)", name, typeInfo.type);
+        }
+    }
 }
 
 

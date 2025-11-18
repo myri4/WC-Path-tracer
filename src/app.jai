@@ -73,7 +73,7 @@ UI :: () {
     ImplGlfw_NewFrame();
     ImplVulkan_NewFrame();
     NewFrame();
-    //ImGuizmo.BeginFrame();
+    ImGuizmo.BeginFrame();
     UI_Editor();
 
     Render();
@@ -85,8 +85,6 @@ UI :: () {
 }
 
 DeinitApp :: () {
-	Deinit(*pathTracer);
-
 	DeinitEditor();
 
     ImplGlfw_Shutdown();
