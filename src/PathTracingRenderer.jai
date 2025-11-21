@@ -44,13 +44,19 @@ SceneData :: struct {
 	RenderedFramesCount: u32;
 }
 
+MaterialType :: enum u32 {
+	METAL      :: 0;
+	DIELECTRIC :: 1;
+}
+
 Material :: struct {
+	type: MaterialType;
 	albedo: Vector3; @Color @Name=Albedo
 	emission: Vector3; @Color @Name=Emission
 
 	metallic: float; @Name=Metallic @Range[min=0,max=1]
 	roughness: float; @Name=Roughness @Range[min=0,max=1]
- 	ior: float = 1.0; @Name=Index_of_refraction @Range[min=1]
+ 	ior: float = 1.0; @Name=Index_of_refraction // @Range[min=1]
 }
 
 SetMetal :: (using mat: *Material, a: Vector3, r: float, sp: float) {

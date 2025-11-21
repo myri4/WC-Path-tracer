@@ -139,7 +139,7 @@ compile_shaders :: (shader_in_dir: string, output_dir: string, include_dir: stri
         if include_dir && file_exists(include_dir)  array_add(*args, tprint("-I%", include_dir));
         // if debug_info  array_add(*args, "-g");
         
-        result, output_string := run_command(..args, capture_and_return_output = true);
+        result, output_string, error_string := run_command(..args, capture_and_return_output = true);
         
         if result.exit_code == 0 {
             compiled_count += 1;
@@ -147,11 +147,7 @@ compile_shaders :: (shader_in_dir: string, output_dir: string, include_dir: stri
         } 
         else {
             failed_count += 1;
-            print("  Failed to compile %\n", shader_name);
-            if output_string
-                print("    Error: %\n", output_string);
-            else
-                print("%", output_string.data);
+            compiler_report(error_string);
         }
     }
     
