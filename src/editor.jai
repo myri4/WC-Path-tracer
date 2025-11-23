@@ -1,6 +1,9 @@
 #load "PathTracingRenderer.jai";
 #load "ui_utils.jai";
 
+#load "RenderData.jai";
+#load "Renderer2D.jai";
+
 // Debug stats
 debugTimer: float32;
 
@@ -24,6 +27,8 @@ MouseSensitivity: float = 5.0;
 gizmoOp := ImGuizmo.OPERATION.TRANSLATE;
 
 pathTracer: PathTracingRenderer;
+renderer2D: Renderer2D;
+renderData: [vk.FRAME_OVERLAP]RenderData;
 
 allowInput := true;
 
@@ -54,7 +59,9 @@ prevPos: Vector2;
 
 InitEditor :: () {
 	Init(*pathTracer);
+	Init(*renderer2D);
 	CreateScreen(*pathTracer, GetWindowSize());
+	CreateScreen(*renderer2D, GetWindowSize());
 }
 
 ResizeEditor :: (size: Vector2) {
@@ -64,10 +71,12 @@ ResizeEditor :: (size: Vector2) {
     }
 
     Resize(*pathTracer, size);
+    Resize(*renderer2D, size);
 }
 
 DeinitEditor :: () {
 	Deinit(*pathTracer);
+	Deinit(*renderer2D);
 }
 
 
@@ -134,15 +143,27 @@ InputEditor :: () {
 	}
 
 	if moved
-		pathTracer.RenderedFramesCount = 0;
+		pathTracer.renderedFramesCount = 0;
 	else 
-		pathTracer.RenderedFramesCount += 1;
+		pathTracer.renderedFramesCount += 1;
 }
 
 UpdateEditor :: () {
 	Update(*camera, ViewPortSize.x / ViewPortSize.y);
 	UpdateMaterials(*pathTracer);
 	Render(*pathTracer, camera);
+	rd := *renderData[vk.CURRENT_FRAME_INDEX];
+
+	for box : bvh {
+		if it_index > 50 break;
+
+		DrawLineCube(rd, box.min, box.max);
+	}
+
+	proj := camera.projection;
+	proj._22 *= -1.0;
+
+	Flush(*renderer2D, rd, camera.view * proj);
 }
 
 UI_SceneViewer :: () {
@@ -165,13 +186,14 @@ UI_SceneViewer :: () {
 		RenderSize := WindowPos + availSize;
 
 		GetWindowDrawList().AddImage(GetWindowDrawList(), .{_TexID = xx pathTracer.ImguiImageID}, WindowPos, RenderSize);
+		GetWindowDrawList().AddImage(GetWindowDrawList(), .{_TexID = xx renderer2D.imguiImageID}, WindowPos, RenderSize);
 
         projection := camera.projection;
 
 		ImGuizmo.SetDrawlist();
 		ImGuizmo.SetRect(WindowPos.x, WindowPos.y, availSize.x, availSize.y);
 		if selectedSphere != -1 {
-			sph := *pathTracer.Spheres.data[selectedSphere];
+			sph := *pathTracer.spheres.data[selectedSphere];
 			world_transform := transpose(make_translation_matrix4(sph.position));
 
 			snap := float.[0.5, 0.5, 0.5];
@@ -184,7 +206,7 @@ UI_SceneViewer :: () {
 				null,
 				ifx ImGui.IsKeyDown(.LeftCtrl) snap.data else null
 			) {
-                pathTracer.RenderedFramesCount = 0;
+                pathTracer.renderedFramesCount = 0;
 				translation:, rotation:, scale: Vector3;
 				ImGuizmo.DecomposeMatrixToComponents(xx *world_transform, xx *translation, xx *rotation, xx *scale);
 
@@ -206,7 +228,7 @@ UI_SceneObjects :: () {
             DrawBgRows();
 
             objectMenuOpen := false;
-            for object, i : pathTracer.Spheres.data {
+            for object, i : pathTracer.spheres.data {
                 PushID(i.(s32));
                 defer PopID();
 
@@ -273,12 +295,12 @@ UI_SceneObjects :: () {
 
 UI_Properties :: () {
 	if Begin("Properties", *showProperties) {
-		sphere := *pathTracer.Spheres.data[selectedSphere];
+		sphere := *pathTracer.spheres.data[selectedSphere];
 		SeparatorText("Sphere");
 		EditStruct(sphere);
 
 		SeparatorText("Material");
-		EditStruct(*pathTracer.Materials.data[sphere.mat]);
+		EditStruct(*pathTracer.materials.data[sphere.mat]);
 	}
 	End();
 }

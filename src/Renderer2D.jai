@@ -12,23 +12,11 @@ Renderer2D :: struct // @TODO: Rename this
 	depthImage: vk.Image;
 	depthImageView: VkImageView;
 
-	shader: vk.Pipeline;
-	descriptorSet: VkDescriptorSet;
-	textureCapacity: u32 = 0;
-
 	lineShader: vk.Pipeline;
 
-	// Post processing
-	// bloom: BloomPass;
-	// composite: CompositePass;
-	// crt: CRTPass;
-
-	finalImage: [2]vk.Image;
-	finalImageView: [2]VkImageView;
 	screenSampler: VkSampler;
 
 	cmd: [vk.FRAME_OVERLAP]VkCommandBuffer;
-	computeCmd: [vk.FRAME_OVERLAP]VkCommandBuffer;
 	imguiImageID: VkDescriptorSet = VK_NULL_HANDLE;
 }
 
@@ -46,8 +34,6 @@ Init :: (using renderer: *Renderer2D)
 		{
 			cmdAllocInfo.commandPool = vk.GraphicsCommandPool;
 			vkAllocateCommandBuffers(vk.logicalDevice, *cmdAllocInfo, *cmd[i]);
-			cmdAllocInfo.commandPool = vk.ComputeCommandPool;
-			vkAllocateCommandBuffers(vk.logicalDevice, *cmdAllocInfo, *computeCmd[i]);
 		}
 	}
 
@@ -138,27 +124,6 @@ Init :: (using renderer: *Renderer2D)
 	{
 		createInfo := vk.PipelineCreateInfo.{
 			renderPass = renderPass,
-			bindingFlags = .[.VARIABLE_DESCRIPTOR_COUNT_BIT | .PARTIALLY_BOUND_BIT],
-
-			depthTest = true,
-			dynamicDescriptorCount = true,
-			
-			dynamicStates = dynamicStates,
-			blendAttachments = blendAttachments,
-		};		
-
-		success:, createInfo.binaries[0] = vk.load_spirv_binary("assets/shaders/Renderer2D.vert");
-		if !success return;
-		success, createInfo.binaries[1] = vk.load_spirv_binary("assets/shaders/Renderer2D.frag");
-		if !success return;
-
-		success, shader = vk.CreatePipeline(createInfo);
-		if !success return;
-	}
-
-	{
-		createInfo := vk.PipelineCreateInfo.{
-			renderPass = renderPass,
 
 			depthTest = true,
 
@@ -175,39 +140,6 @@ Init :: (using renderer: *Renderer2D)
 
 		success, lineShader = vk.CreatePipeline(createInfo);
 	}
-}
-
-AllocateNewDescriptor :: (using renderer: *Renderer2D, count: u32)
-{
-	textureCapacity = count;
-	
-	if descriptorSet
-		vkFreeDescriptorSets(vk.logicalDevice, vk.DescriptorAllocator.CurrentPool, 1, *descriptorSet);
-
-	set_counts := VkDescriptorSetVariableDescriptorCountAllocateInfo.{
-		descriptorSetCount = 1,
-		pDescriptorCounts = *count,
-	};
-	vk.AllocateDescriptorSet(*descriptorSet, shader.descriptorLayout, *set_counts, set_counts.descriptorSetCount);
-}
-
-UpdateTextures :: (using renderer: *Renderer2D, assetManager: AssetManager)
-{
-	push_allocator(temp);
-    defer reset_temporary_storage();
-	infos: [..]VkDescriptorImageInfo;
-	for image : assetManager.Textures
-		array_add(*infos, .{image.sampler, image.view, .SHADER_READ_ONLY_OPTIMAL});
-
-	write := VkWriteDescriptorSet.{
-		dstSet = descriptorSet,
-		dstBinding = 0,
-		descriptorCount = xx infos.count,
-		descriptorType = .COMBINED_IMAGE_SAMPLER,
-		pImageInfo = infos.data,
-	};
-
-	vkUpdateDescriptorSets(vk.logicalDevice, 1, *write, 0, null);
 }
 
 CreateScreen :: (using renderer: *Renderer2D, size: Vector2)
@@ -262,43 +194,8 @@ CreateScreen :: (using renderer: *Renderer2D, size: Vector2)
 		layers = 1,
 	});
 
-	for * image, i : finalImage
-	{
-		result := vk.Create(image, .{
-			format = .R32G32B32A32_SFLOAT,
-			width = xx renderSize.x,
-			height = xx renderSize.y,
-			usage = .SAMPLED_BIT | .STORAGE_BIT | .TRANSFER_SRC_BIT,
-		});
+	
 
-		if result != .SUCCESS
-		{
-			print("Failed creating a finalImage[%] image with result '%'", i, result);
-			return;
-		}
-
-		vk.SetObjectName(image.handle, tprint("Renderer2D.finalImage[%]", i));
-		
-		vk.Create(*finalImageView[i], image.*);
-		vk.SetObjectName(finalImageView[i], tprint("Renderer2D.finalImageView[%]", i));
-	}
-
-	vk.BeginImmediateSumbit(vk.UploadCommandBuffer);
-	for image : finalImage
-	{
-		imageMemoryBarrier := vk.GenerateImageMemoryBarier(image.handle, .UNDEFINED, .GENERAL, .{
-			aspectMask = .COLOR_BIT,
-			levelCount = 1,
-			layerCount = 1,
-		});
-
-		vkCmdPipelineBarrier(vk.UploadCommandBuffer, .ALL_COMMANDS_BIT, .ALL_COMMANDS_BIT, 0, 0, null, 0, null, 1, *imageMemoryBarrier);
-	}
-	vk.EndImmediateSumbit(vk.UploadCommandBuffer);
-
-	//bloom.CreateImages(renderSize, m_OutputImage.GetMipLevelCount());
-
-	// For now we are using the same sampler for sampling the screen and the bloom images but maybe it should be separated
 	vk.Create(*screenSampler, .{
 		magFilter = .LINEAR,
 		minFilter = .LINEAR,
@@ -307,24 +204,6 @@ CreateScreen :: (using renderer: *Renderer2D, size: Vector2)
 		addressModeV = .CLAMP_TO_EDGE,
 		addressModeW = .CLAMP_TO_EDGE,
 	});
-
-	/*int m_PassCount = 0; // @NOTE: Not sure if this is working properly
-	int m_FinalPass = 0;
-
-	auto GetImageBuffer = [&]()
-		{
-			m_FinalPass = m_PassCount++ % 2;
-			return m_FinalImageView[m_FinalPass];
-		};
-
-	bloom.SetUp(m_OutputImageView);
-	composite.SetUp(m_ScreenSampler, GetImageBuffer(), m_OutputImageView, bloom.GetOutput());
-	{
-
-		auto output = GetImageBuffer();
-		auto input = GetImageBuffer();
-		crt.SetUp(m_ScreenSampler, output, input);
-	}*/
 
 	imguiImageID = ImGui.ImplVulkan_AddTexture(screenSampler, outputImageView, .GENERAL);
 }
@@ -348,23 +227,10 @@ DestroyScreen :: (using renderer: *Renderer2D)
 	Destroy(*depthImageView);
 
 	Destroy(*screenSampler);
-
-	for * image, i : finalImage
-	{
-		Destroy(image);
-		Destroy(*finalImageView[i]);
-	}
-
-	//bloom.DestroyImages();
 }
 
 Deinit :: (using renderer: *Renderer2D)
 {
-	/*bloom.Deinit();
-	composite.Deinit();
-	crt.Deinit();*/
-
-	vk.Destroy(shader);
 	vk.Destroy(lineShader);
 
 	DestroyScreen(renderer);
@@ -374,86 +240,60 @@ Deinit :: (using renderer: *Renderer2D)
 
 Flush :: (using,except(cmd) renderer: *Renderer2D, using renderData: *RenderData, viewProj: Matrix4)
 {
-	//if (!m_IndexCount && !m_LineVertexCount) return;
+	//if LineVertexBuffer.data.count == 0 return;
 
-	{
-		cmd := renderer.cmd[vk.CURRENT_FRAME_INDEX];
-		vkResetCommandBuffer(cmd, 0);
+	cmd := renderer.cmd[vk.CURRENT_FRAME_INDEX];
+	vkResetCommandBuffer(cmd, 0);
 
-		begInfo := VkCommandBufferBeginInfo.{ flags = .ONE_TIME_SUBMIT_BIT };
+	begInfo := VkCommandBufferBeginInfo.{ flags = .ONE_TIME_SUBMIT_BIT };
 
-		vkBeginCommandBuffer(cmd, *begInfo);
-		clearValues := VkClearValue.[
-			.{color._float32 = .[0.0, 0.0, 0.0, 1.0]},
-			.{depthStencil.depth = 1.0},
-		];
+	vkBeginCommandBuffer(cmd, *begInfo);
+	clearValues := VkClearValue.[
+		.{color._float32 = .[0.0, 0.0, 0.0, 0.0]},
+		.{depthStencil.depth = 1.0},
+	];
 
-		extent := VkExtent2D.{ renderSize.x.(u32), renderSize.y.(u32) };
-		rpInfo := VkRenderPassBeginInfo.{
-			renderPass = renderPass,
-			framebuffer = framebuffer,
-			clearValueCount = clearValues.count,
-			pClearValues = clearValues.data,
-			renderArea.extent = extent,
-		};		
+	extent := VkExtent2D.{ renderSize.x.(u32), renderSize.y.(u32) };
+	rpInfo := VkRenderPassBeginInfo.{
+		renderPass = renderPass,
+		framebuffer = framebuffer,
+		clearValueCount = clearValues.count,
+		pClearValues = clearValues.data,
+		renderArea.extent = extent,
+	};		
 
-		vkCmdBeginRenderPass(cmd, *rpInfo, .INLINE);
+	vkCmdBeginRenderPass(cmd, *rpInfo, .INLINE);
 
-		viewport := VkViewport.{
-			//.y = createInfo.renderSize.y; // change this to 0 to invert
-			width = renderSize.x,
-			height = renderSize.y,
-			//height = -createInfo.renderSize.y; // remove the - to invert
-			maxDepth = 1.0,
-		};
+	viewport := VkViewport.{
+		//.y = createInfo.renderSize.y; // change this to 0 to invert
+		width = renderSize.x,
+		height = renderSize.y,
+		//height = -createInfo.renderSize.y; // remove the - to invert
+		maxDepth = 1.0,
+	};
 
-		scissor := VkRect2D.{ extent = extent };
+	scissor := VkRect2D.{ extent = extent };
 
-		vkCmdSetViewport(cmd, 0, 1, *viewport);
-		vkCmdSetScissor(cmd, 0, 1, *scissor);
+	vkCmdSetViewport(cmd, 0, 1, *viewport);
+	vkCmdSetScissor(cmd, 0, 1, *scissor);
 
-		m_data: struct {
-			ViewProj: Matrix4;
-			vertexBuffer: VkDeviceAddress;
-		};
-		m_data.ViewProj = viewProj;
-		if IndexBuffer.data.count
-		{
-			UploadVertexData(renderData);
-			m_data.vertexBuffer = GetDeviceAddress(VertexBuffer.buffer);
+	m_data: struct {
+		ViewProj: Matrix4;
+		vertexBuffer: VkDeviceAddress;
+	};
 
-			vkCmdBindPipeline(cmd, .GRAPHICS, shader.handle);
-			vkCmdPushConstants(cmd, shader.layout, .VERTEX_BIT, 0, size_of(type_of(m_data)), *m_data);
+	m_data.ViewProj = viewProj;
+	UploadLineVertexData(renderData);
 
-			vkCmdBindDescriptorSets(cmd, .GRAPHICS, shader.layout, 0, 1, *descriptorSet, 0, null);
-			vkCmdBindIndexBuffer(cmd, IndexBuffer.buffer.handle, 0, .UINT32);
-			vkCmdDrawIndexed(cmd, xx IndexBuffer.data.count, 1, 0, 0, 0);
-		}
+	m_data.vertexBuffer = GetDeviceAddress(LineVertexBuffer.buffer);
 
-		if LineVertexBuffer.data.count
-		{
-			UploadLineVertexData(renderData);
+	vkCmdBindPipeline(cmd, .GRAPHICS, lineShader.handle);
+	vkCmdPushConstants(cmd, lineShader.layout, .VERTEX_BIT, 0, size_of(type_of(m_data)), *m_data);
 
-			m_data.vertexBuffer = GetDeviceAddress(LineVertexBuffer.buffer);
+	vkCmdDraw(cmd, xx LineVertexBuffer.data.count, 1, 0, 0);
 
-			vkCmdBindPipeline(cmd, .GRAPHICS, lineShader.handle);
-			vkCmdPushConstants(cmd, lineShader.layout, .VERTEX_BIT, 0, size_of(type_of(m_data)), *m_data);
+	vkCmdEndRenderPass(cmd);
+	vkEndCommandBuffer(cmd);
 
-			vkCmdDraw(cmd, xx LineVertexBuffer.data.count, 1, 0, 0);
-		}
-
-		vkCmdEndRenderPass(cmd);
-		vkEndCommandBuffer(cmd);
-
-		Submit(cmd, vk.graphicsQueue); // @Bug?: why do I need to put vk. ?
-	}
-
-	/*{
-		wc::CommandEncoder cmd;
-		bloom.Execute(cmd);
-		composite.Execute(cmd, renderSize);
-		crt.Execute(cmd, renderSize, 0.f);
-
-		cmd.ExecuteCompute(m_ComputeCmd[CURRENT_FRAME]);
-	}*/
+	Submit(cmd, vk.graphicsQueue);
 }

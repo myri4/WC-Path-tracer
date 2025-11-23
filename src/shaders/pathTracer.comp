@@ -7,310 +7,316 @@
 #include "include/TonemapFunctions.glsl"
 #include "include/Math.glsl"
 
-layout(local_size_x = 4, local_size_y = 4) in;
-layout(binding = 0, rgba32f) restrict uniform image2D o_Image;
-
-struct SceneData
-{
+struct SceneData {
     // Camera
-	mat4 InverseProjection;
-	mat4 InverseView;
+	mat4 inverseProjection;
+	mat4 inverseView;
     vec3 position;
-    uint MaxBounceCount;
-    uint Samples;
-    uint SphereCount;
-    uint RenderedFramesCount;
+    uint maxBounceCount;
+    uint samples;
+    uint sphereCount;
+    uint indexCount;
+    uint renderedFramesCount;
+
+    uint boxID;
 };
 
-struct Ray
-{
+struct Ray {
     vec3 origin;
     vec3 direction;
-};
-
-struct Material 
-{
-    vec3 albedo;
-    vec3 emission;
-
-    float metallic;
-    float roughness;
-    float ior;
+    vec3 invDirection;
 };
 
 #define MaterialID uint
+#define MaterialType uint
+#define MATERIAL_METAL 0
+#define MATERIAL_DIELECTRIC 1
 
-struct HitInfo
-{
+struct Material {
+    MaterialType type;
+    vec3 albedo;
+    vec3 emission;
+    float emissionStrength;
+
+    float metallic;
+    float roughness;
+
+    vec3 absorption; 
+ 	float absorptionStrength;
+    float ior;
+};
+
+
+struct HitInfo {
     vec3 p;
     vec3 normal;
     float t;
     bool hit;
     bool front;
+    vec2 uv;
     MaterialID material;
 };
 
-struct Sphere
-{
+struct Sphere {
 	vec3 position;
 	float radius;
-	MaterialID mat;
+	MaterialID material;
+};
+
+struct Node {
+	vec3 min;
+	vec3 max;
+
+    uint leftNodeOrTriangleIndex;
+	uint triangleCount;
 };
 
 layout(buffer_reference, scalar) buffer SceneDataPointer { SceneData sceneData; };
 layout(buffer_reference, scalar) buffer MaterialBufferPointer { Material materials[]; };
 layout(buffer_reference, scalar) buffer SphereBufferPointer { Sphere spheres[]; };
 
-layout(push_constant) uniform Data
-{
+layout(buffer_reference, scalar) buffer VertexBufferPointer { vec3 vertices[]; };
+layout(buffer_reference, scalar) buffer IndexBufferPointer { uint indices[]; };
+layout(buffer_reference, scalar) buffer BVHBufferPointer { Node bvh[]; };
+
+layout(push_constant) uniform Data {
     SceneDataPointer sdp;
     MaterialBufferPointer mbp;
     SphereBufferPointer sphereBP;
+
+    VertexBufferPointer vertexBP;
+    IndexBufferPointer indexBP;
+    BVHBufferPointer bvhBP;
 };
 
-vec3 ray_color(vec3 r) 
-{
-    //return vec3(0.0);
-    float a = 0.5 * (r.y + 1.0);
-    return mix(vec3(0.5, 0.7, 1.0), vec3(1.0), a);
+vec2 rayBoxIntersect(Ray ray, vec3 bmin, vec3 bmax) {
+    vec3 tbot = (bmin - ray.origin) * ray.invDirection;
+    vec3 ttop = (bmax - ray.origin) * ray.invDirection;
+    vec3 tmin = min(ttop, tbot);
+    vec3 tmax = max(ttop, tbot);
+    vec2 t = max(tmin.xx, tmin.yz);
+    float t0 = max(t.x, t.y);
+    t = min(tmax.xx, tmax.yz);
+    float t1 = min(t.x, t.y);
+
+    return vec2(t0, t1);
 }
 
-HitInfo raySphereIntersect(Ray ray, vec3 position, float radius) 
-{    
-    HitInfo rec;
-    rec.hit = false;
+float raySphereIntersect(Ray ray, vec3 position, float radius) {    
     vec3 oc = ray.origin - position;
     float a = dot(ray.direction, ray.direction);
     float half_b = dot(oc, ray.direction);
     float c = dot(oc, oc) - radius * radius;
 
     float discriminant = half_b * half_b - a*c;
-    if (discriminant < 0.f) return rec;
+    if (discriminant < 0.0) return 0.0;
     float sqrtd = sqrt(discriminant);
 
     // Find the nearest root that lies in the acceptable range.
     float root = (-half_b - sqrtd) / a;
     
-    if (root < bias || 100000.f < root) {
+    if (root < bias || 100000.0 < root) {
         root = (-half_b + sqrtd) / a;
-        if (root < bias || 100000.f < root)
-            return rec;
+        if (root < bias || 100000.0 < root)
+            return 0.0;
     }
 
-    rec.t = root;
-    rec.p = ray.origin + rec.t * ray.direction;
-    rec.normal = (rec.p - position) / radius;
-    rec.hit = true;
-
-    return rec;
+    return root;
 }
 
-HitInfo Intersect(Ray ray)
-{
+vec3 rayTriangleIntersect(Ray ray, vec3 a, vec3 b, vec3 c) {
+	vec3 edgeAB = b - a;
+	vec3 edgeAC = c - a;
+	vec3 oa = ray.origin - a;
+    vec3 crossRDE2 = cross(ray.direction, edgeAC);
+    float dotE1CrossRDE2 = 1.0 / dot(edgeAB, crossRDE2);
+	vec3 crossROAE1 = cross(oa, edgeAB);
+	vec2 uv = vec2(dot(oa, crossRDE2) * dotE1CrossRDE2, dot(ray.direction, crossROAE1 * dotE1CrossRDE2));
+
+	float t = dot(edgeAC, crossROAE1) * dotE1CrossRDE2;
+    return (t > 0.0 && uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.x + uv.y <= 1.0) ? 
+    vec3(t, uv) : vec3(-1.0, uv);
+}
+
+HitInfo Intersect(Ray ray) {
     HitInfo rec;
     rec.t = kInfinity;
     rec.hit = false;
 
-    for (int i = 0; i < sdp.sceneData.SphereCount; i++)
-    {
-        HitInfo tempRec = raySphereIntersect(ray, sphereBP.spheres[i].position, sphereBP.spheres[i].radius); 
-        if (tempRec.hit && tempRec.t < rec.t)
-        {
-            rec.t = tempRec.t;
-            rec.p = tempRec.p;
-            rec.normal = tempRec.normal;
+    for (int i = 0; i < sdp.sceneData.sphereCount; i++) {
+        float tempRec = raySphereIntersect(ray, sphereBP.spheres[i].position, sphereBP.spheres[i].radius); 
+        if (tempRec != 0.0 && tempRec < rec.t) {
+            rec.t = tempRec;
+            rec.p = ray.origin + rec.t * ray.direction;
+            rec.normal = (rec.p - sphereBP.spheres[i].position) / sphereBP.spheres[i].radius;
             rec.hit = true;
-            rec.material = sphereBP.spheres[i].mat;
-
+            rec.material = sphereBP.spheres[i].material;
         }
+    }
+
+    /*vec2 bvhT = rayBoxIntersect(ray, bvhBP.bvh[sdp.sceneData.boxID].min, bvhBP.bvh[sdp.sceneData.boxID].max);
+    if (bvhT.x <= bvhT.y && bvhT.y > 0.0 && bvhT.x < rec.t) {
+        #if 0
+        for (int i = 0; i < sdp.sceneData.indexCount; i += 3) {
+            vec3 a = vertexBP.vertices[indexBP.indices[i + 0]];
+            vec3 b = vertexBP.vertices[indexBP.indices[i + 1]];
+            vec3 c = vertexBP.vertices[indexBP.indices[i + 2]];
+            vec3 tempRec = rayTriangleIntersect(ray, a, b, c); 
+            if (tempRec.x != -1.0 && tempRec.x < rec.t) {
+                rec.t = tempRec.x;
+                rec.normal = normalize(cross(b - a, c - a));
+                rec.hit = true;
+                rec.material = 0;
+            }
+        }
+        #else
+        rec.t = bvhT.x;
+        rec.normal = vec3(0.0, 1.0, 0.0);
+        rec.hit = true;
+        rec.material = 0;
+        #endif
+    }*/
+
+    // BVH traversal
+    uint nodeStack[32];
+    int stackIndex = 0;
+    nodeStack[stackIndex++] = 0; // Start with root node index
+
+    while(stackIndex > 0) {
+        uint nodeIdx = nodeStack[--stackIndex];
+        Node node = bvhBP.bvh[nodeIdx];
+        
+        // AABB intersection test with early rejection
+        vec2 bvhT = rayBoxIntersect(ray, node.min, node.max);
+        if (!(bvhT.x <= bvhT.y && bvhT.y > 0.0 && bvhT.x < rec.t)) {
+            continue; // Skip this node entirely
+        }
+        
+        if (node.triangleCount > 0) {
+            for (uint i = 0; i < node.triangleCount; i += 3) {
+                vec3 a = vertexBP.vertices[indexBP.indices[i + node.leftNodeOrTriangleIndex + 0]];
+                vec3 b = vertexBP.vertices[indexBP.indices[i + node.leftNodeOrTriangleIndex + 1]];
+                vec3 c = vertexBP.vertices[indexBP.indices[i + node.leftNodeOrTriangleIndex + 2]];
+                
+                vec3 tempRec = rayTriangleIntersect(ray, a, b, c); 
+                if (tempRec.x != -1.0 && tempRec.x < rec.t) {
+                    rec.t = tempRec.x;
+                    rec.normal = normalize(cross(b - a, c - a));
+                    rec.hit = true;
+                    rec.material = 0;
+                }
+            }
+        }
+        else {
+            uint leftChild = node.leftNodeOrTriangleIndex;
+            uint rightChild = leftChild + 1;
+            
+            Node leftNode = bvhBP.bvh[leftChild];
+            Node rightNode = bvhBP.bvh[rightChild];
+            
+            vec2 leftT = rayBoxIntersect(ray, leftNode.min, leftNode.max);
+            vec2 rightT = rayBoxIntersect(ray, rightNode.min, rightNode.max);
+            
+            float leftDist = (leftT.x > 0.0) ? leftT.x : leftT.y;
+            float rightDist = (rightT.x > 0.0) ? rightT.x : rightT.y;
+            
+            if (leftDist < rightDist) {
+                nodeStack[stackIndex++] = rightChild;
+                nodeStack[stackIndex++] = leftChild;
+            } else {
+                nodeStack[stackIndex++] = leftChild;
+                nodeStack[stackIndex++] = rightChild;
+            }
+        }
+    }
+    
+    if (rec.hit) {
+        rec.p = ray.origin + rec.t * ray.direction;
+        rec.front = dot(ray.direction, rec.normal) < 0.0;
+        if (!rec.front) rec.normal *= -1.0;
     }
 
     return rec;
 }
 
-void basis(in vec3 n, out vec3 b1, out vec3 b2) 
-{
-    if(n.z < 0.f)
-    {
-        float a = 1.f / (1.f - n.z);
-        float b = n.x * n.y * a;
-        b1 = vec3(1.f - n.x * n.x * a, -b, n.x);
-        b2 = vec3(b, n.y * n.y*a - 1.f, -n.y);
-    }
-    else
-    {
-        float a = 1.f / (1.f + n.z);
-        float b = -n.x * n.y * a;
-        b1 = vec3(1.f - n.x * n.x * a, b, -n.x);
-        b2 = vec3(b, 1.f - n.y * n.y * a, -n.y);
-    }
+float CalculateReflectance(vec3 inDir, vec3 normal, float iorA, float iorB) {
+    float refractRatio = iorA / iorB;
+    float cosAngleIn = -dot(inDir, normal);
+    float sinSqrAngleOfRefraction = refractRatio * refractRatio * (1 - cosAngleIn * cosAngleIn);
+    if (sinSqrAngleOfRefraction >= 1) return 1; // Ray is fully reflected, no refraction occurs
+
+    float cosAngleOfRefraction = sqrt(1 - sinSqrAngleOfRefraction);
+    float denominatorPerpendicular = iorA * cosAngleIn + iorB * cosAngleOfRefraction;
+    float denominatorParallel = iorB * cosAngleIn + iorA * cosAngleOfRefraction;
+
+    if (min(denominatorPerpendicular, denominatorParallel) < 1E-8) return 1;
+
+    // Perpendicular polarization
+    float rPerpendicular = (iorA * cosAngleIn - iorB * cosAngleOfRefraction) / denominatorPerpendicular;
+    rPerpendicular *= rPerpendicular;
+    // Parallel polarization
+    float rParallel = (iorB * cosAngleIn - iorA * cosAngleOfRefraction) / denominatorParallel;
+    rParallel *= rParallel;
+
+    // Return the average of the perpendicular and parallel polarizations
+    return (rPerpendicular + rParallel) / 2;
 }
 
-vec3 toWorld(vec3 x, vec3 y, vec3 z, vec3 v) { return v.x*x + v.y*y + v.z*z; }
-
-vec3 toLocal(vec3 x, vec3 y, vec3 z, vec3 v) { return vec3(dot(v, x), dot(v, y), dot(v, z)); }
-
-vec3 F_Schlick(vec3 f0, float theta) { return f0 + (1.f - f0) * pow(1.f - theta, 5.f); }
-
-float F_Schlick(float f0, float f90, float theta) { return f0 + (f90 - f0) * pow(1.0-theta, 5.0); }
-
-float D_GTR(float roughness, float NoH, float k) 
-{
-    float a2 = pow(roughness, 2.f);
-    return a2 / (PI * pow((NoH*NoH)*(a2*a2-1.)+1., k));
+vec3 ray_color(vec3 r) {
+    //return vec3(0.0);
+    float a = 0.5 * (r.y + 1.0);
+    return mix(vec3(0.5, 0.7, 1.0), vec3(1.0), a);
 }
 
-float SmithG(float NDotV, float alphaG)
-{
-    float a = alphaG * alphaG;
-    float b = NDotV * NDotV;
-    return (2.f * NDotV) / (NDotV + sqrt(a + b - a * b));
-}
+vec3 TraceRay(Ray ray, inout uint rngState) {
+    vec3 totalLight = vec3(0.0);
+    vec3 transmittance = vec3(1.0);
 
-float GeometryTerm(float NoL, float NoV, float roughness)
-{
-    float a2 = roughness*roughness;
-    float G1 = SmithG(NoV, a2);
-    float G2 = SmithG(NoL, a2);
-    return G1 * G2;
-}
-
-vec3 SampleGGXVNDF(vec3 V, float ax, float ay, float r1, float r2)
-{
-    vec3 Vh = normalize(vec3(ax * V.x, ay * V.y, V.z));
-
-    float lensq = Vh.x * Vh.x + Vh.y * Vh.y;
-    vec3 T1 = lensq > 0.f ? vec3(-Vh.y, Vh.x, 0.f) * inversesqrt(lensq) : vec3(1.f, 0.f, 0.f);
-    vec3 T2 = cross(Vh, T1);
-
-    float r = sqrt(r1);
-    float phi = 2.f * PI * r2;
-    float t1 = r * cos(phi);
-    float t2 = r * sin(phi);
-    float s = 0.5f * (1.f + Vh.z);
-    t2 = (1.f - s) * sqrt(1.f - t1 * t1) + s * t2;
-
-    vec3 Nh = t1 * T1 + t2 * T2 + sqrt(max(0.f, 1.f - t1 * t1 - t2 * t2)) * Vh;
-
-    return normalize(vec3(ax * Nh.x, ay * Nh.y, max(0.f, Nh.z)));
-}
-
-float GGXVNDFPdf(float NoH, float NoV, float roughness)
-{
- 	float D = D_GTR(roughness, NoH, 2.f);
-    float G1 = SmithG(NoV, roughness * roughness);
-    return (D * G1) / max(0.00001f, 4.f * NoV);
-}
-
-
-vec3 evalDisneyDiffuse(vec3 albedo, float NoL, float NoV, float LoH, float roughness) 
-{
-    float FD90 = 0.5f + 2.f * roughness * pow(LoH, 2.f);
-    float a = F_Schlick(1.f, FD90, NoL);
-    float b = F_Schlick(1.f, FD90, NoV);
-    
-    return albedo * (a * b / PI);
-}
-
-vec3 evalDisneySpecular(float perceptualRoughness, float roughness, vec3 F, float NoH, float NoV, float NoL) 
-{
-    float D = D_GTR(roughness, NoH, 2.f);
-    float G = GeometryTerm(NoL, NoV, pow(0.5f + perceptualRoughness * 0.5, 2.f));
-
-    vec3 spec = D * F * G / (4.f * NoL * NoV);
-    
-    return spec;
-}
-
-// See: https://web.archive.org/web/20170610002747/http://amietia.com/lambertnotangent.html
-
-vec4 sampleDisneyBRDF(vec3 v, vec3 n, Material material, inout vec3 l, inout uint state) 
-{    
-    float roughness = pow(material.roughness, 2.f);
-
-    // sample microfacet normal
-    vec3 t, b;
-    basis(n, t, b);
-    vec3 V = toLocal(t, b, n, v);
-    vec3 h = SampleGGXVNDF(V, roughness, roughness, rand(state), rand(state));
-    if (h.z < 0.f) h = -h;
-    h = toWorld(t, b, n, h);
-
-    // fresnel
-    vec3 f0 = mix(vec3(0.04f), material.albedo, material.metallic);
-    vec3 F = F_Schlick(f0, dot(v,h));
-    
-    // lobe weight probability
-    float diffW = (1.f - material.metallic);
-    float specW = luminance(F);
-    float invW = 1.f / (diffW + specW);
-    diffW *= invW;
-    specW *= invW;
-    
-    
-    vec4 brdf = vec4(0.f);
-    float NoV = dot(n, v);
-    if (rand(state) < diffW) // diffuse
-    {
-        l = RandomHemisphereDirection(n, state);
-        h = normalize(l + v);
-        
-        float NoL = dot(n, l);
-        if (NoL <= 0.f || NoV <= 0.f) return vec4(0.f);
-        float LoH = dot(l, h);
-        float pdf = NoL / PI;
-        
-        brdf.rgb = evalDisneyDiffuse(material.albedo, NoL, NoV, LoH, roughness) * (1.f - F) * NoL;
-        brdf.a = diffW * pdf;
-    } 
-    else // specular
-    {
-        l = reflect(-v, h);
-        
-        float NoL = dot(n, l);
-        if (NoL <= 0.f || NoV <= 0.f) return vec4(0.f);
-        float NoH = min(dot(n, h), 0.99f);
-        float pdf = GGXVNDFPdf(NoH, NoV, roughness);
-        
-        brdf.rgb = evalDisneySpecular(material.roughness, roughness, F, NoH, NoV, NoL) * NoL;
-        brdf.a = specW * pdf;
-    }
-
-    return brdf;
-}
-
-
-vec3 TraceRay(Ray ray, inout uint rngState)
-{
-    vec3 incomingLight = vec3(0.f);
-    vec3 rayColor = vec3(1.f);
-
-    for(int i = 0; i <= sdp.sceneData.MaxBounceCount; i++)
-    {        
+    for(int i = 0; i <= sdp.sceneData.maxBounceCount; i++) { 
         HitInfo hitInfo = Intersect(ray);
         
         if (!hitInfo.hit)
-            return incomingLight + ray_color(ray.direction) * rayColor;
+            return totalLight + ray_color(ray.direction) * transmittance;
 
-        Material mat = mbp.materials[hitInfo.material];
-        vec3 outDir;
-        vec3 v = -ray.direction;
-        vec4 brdf = sampleDisneyBRDF(v, hitInfo.normal, mat, outDir, rngState);
+        Material material = mbp.materials[hitInfo.material];
         
-        incomingLight += mat.emission * rayColor;
+        totalLight += material.emission * material.emissionStrength * transmittance;
+
         
-        if (brdf.a > 0.0)
-            rayColor *= brdf.rgb / brdf.a;
-        
-        ray.origin = hitInfo.p + hitInfo.normal * bias;
-        ray.direction = outDir;
+        if (material.type == MATERIAL_METAL) {
+            ray.origin = hitInfo.p + hitInfo.normal * bias;
+            ray.direction = normalize(reflect(ray.direction, hitInfo.normal) + material.roughness * RandomDirection(rngState));
+            ray.invDirection = 1.0 / ray.direction;
+            
+            transmittance *= material.albedo;
+        }
+        else {
+            // Determine eta in/out explicitly
+            float etaI = hitInfo.front ? 1.0 : material.ior;
+            float etaT = hitInfo.front ? material.ior : 1.0;
+
+            float reflectProb = CalculateReflectance(ray.direction, hitInfo.normal, etaI, etaT);
+
+            vec3 R = reflect(ray.direction, hitInfo.normal);
+            vec3 T = refract(ray.direction, hitInfo.normal, etaI / etaT);
+
+            bool followReflection = (T.x == 0.0 && T.y == 0.0 && T.z == 0.0) || (rand(rngState) <= reflectProb);
+
+            ray.direction = normalize((followReflection ? R : T) + material.roughness * RandomDirection(rngState));
+            ray.invDirection = 1.0 / ray.direction;
+            
+            if (!followReflection && !hitInfo.front) transmittance *= exp(-material.absorption * material.absorptionStrength * hitInfo.t);
+            ray.origin = hitInfo.p + bias * hitInfo.normal * sign(dot(ray.direction, hitInfo.normal));
+        }
     }
 
-    return incomingLight;
+    return totalLight;
 }
 
-void main()
-{
+layout(local_size_x = 4, local_size_y = 4) in;
+layout(binding = 0, rgba32f) restrict uniform image2D o_Image;
+
+void main() {
     vec2 imgSize = vec2(imageSize(o_Image));
 
     ivec2 invocID = ivec2(gl_GlobalInvocationID);
@@ -322,28 +328,26 @@ void main()
         
     SceneData sceneData = sdp.sceneData;
 
-    vec4 target = sceneData.InverseProjection * vec4(coord.x, coord.y, 1, 1);
-    vec3 rayDirection = normalize(vec3(sceneData.InverseView * vec4(normalize(vec3(target) / target.w), 0.0)));
+    vec4 target = sceneData.inverseProjection * vec4(coord.x, coord.y, 1, 1);
+    vec3 rayDirection = normalize(vec3(sceneData.inverseView * vec4(normalize(vec3(target) / target.w), 0.0)));
 
-    uint pixel_index = invocID.x + invocID.y * uint(imgSize.x) + sceneData.RenderedFramesCount * 719393;
+    uint pixel_index = invocID.x + invocID.y * uint(imgSize.x) + sceneData.renderedFramesCount * 719393;
     uint seed = pcg_hash(pixel_index);
 
     vec3 result = vec3(0.0);
     
-    for (int i = 0; i < sdp.sceneData.Samples; i++)
-        result += TraceRay(Ray(sceneData.position, rayDirection), seed);
+    for (int i = 0; i < sdp.sceneData.samples; i++)
+        result += TraceRay(Ray(sceneData.position, rayDirection, 1.0 / rayDirection), seed);
        
-    result /= sdp.sceneData.Samples;
+    result /= sdp.sceneData.samples;
 
     vec3 oldRender = imageLoad(o_Image, ivec2(gl_GlobalInvocationID)).rgb;
 
-    float weight = 1.0 / (sceneData.RenderedFramesCount + 1);
+    float weight = 1.0 / (sceneData.renderedFramesCount + 1);
     vec3 accumulatedAverage = mix(oldRender, result, weight);
-    if (sceneData.RenderedFramesCount == 0) accumulatedAverage = result;
+    if (sceneData.renderedFramesCount == 0) accumulatedAverage = result;
 
-
-
-    //result = pow(result, vec3(1.0f / 2.2f));
+    //result = pow(result, vec3(1.0 / 2.0));
     //result = PBRNeutral(result);
 
     imageStore(o_Image, ivec2(gl_GlobalInvocationID), vec4(accumulatedAverage, 1.0));

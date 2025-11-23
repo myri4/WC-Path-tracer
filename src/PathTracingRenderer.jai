@@ -1,4 +1,5 @@
 #load "BufferManager.jai";
+#load "ModelLoader.jai";
 
 ComputeWorkGroupSize :: 4;
 
@@ -28,7 +29,8 @@ Update :: (using cam: *Camera, aspectRatio: float = 16.0 / 9.0) {
 	success:, inverseView = inverse(view);
 	if !success log_error("Failed to inverse a view matrix\n");
 
-	projection = transpose(make_projection_matrix(radians(fov), aspectRatio, 0.1, 100.0));
+	projection = make_projection_matrix(radians(fov), aspectRatio, 0.1, 100.0);
+	projection = transpose(projection);
 	success, inverseProjection = inverse(projection);
 	if !success log_error("Failed to inverse a projection matrix\n");
 }
@@ -38,10 +40,15 @@ SceneData :: struct {
 	inverseProjection: Matrix4;
 	inverseView: Matrix4;
 	position: Vector3;
-	MaxBounceCount: u32 = 3;
-	Samples: u32 = 1;
-	SphereCount: u32;
-	RenderedFramesCount: u32;
+	maxBounceCount: u32 = 3;
+	samples: u32 = 1;
+	sphereCount: u32;
+
+	indexCount: u32;
+	
+	renderedFramesCount: u32;
+
+	boxID: u32;
 }
 
 MaterialType :: enum u32 {
@@ -53,9 +60,13 @@ Material :: struct {
 	type: MaterialType;
 	albedo: Vector3; @Color @Name=Albedo
 	emission: Vector3; @Color @Name=Emission
+	emissionStrength: float; @Name=Emission_Strength
 
 	metallic: float; @Name=Metallic @Range[min=0,max=1]
 	roughness: float; @Name=Roughness @Range[min=0,max=1]
+
+ 	absorption: Vector3; @Color @Name=Absorption
+ 	absorptionStrength: float = 1.0; @Name=Absorption_Strength
  	ior: float = 1.0; @Name=Index_of_refraction // @Range[min=1]
 }
 
@@ -97,16 +108,155 @@ PathTracingRenderer :: struct {
 	sceneDataBuffer: vk.Buffer; @NoDisplay
 
 
-	Materials: DBufferManager(Material, VkBufferUsageFlagBits.SHADER_DEVICE_ADDRESS_BIT.(u32)); @NoDisplay
+	materials: DBufferManager(Material, VkBufferUsageFlagBits.SHADER_DEVICE_ADDRESS_BIT.(u32)); @NoDisplay
+	spheres: DBufferManager(Sphere, VkBufferUsageFlagBits.SHADER_DEVICE_ADDRESS_BIT.(u32)); @NoDisplay
 
-	Spheres: DBufferManager(Sphere, VkBufferUsageFlagBits.SHADER_DEVICE_ADDRESS_BIT.(u32)); @NoDisplay
+	vertexBuffer: DBufferManager(Vector3, VkBufferUsageFlagBits.SHADER_DEVICE_ADDRESS_BIT.(u32)); @NoDisplay
+	indexBuffer: DBufferManager(u32, VkBufferUsageFlagBits.SHADER_DEVICE_ADDRESS_BIT.(u32)); @NoDisplay
+
+	bvhBuffer: DBufferManager(Node, VkBufferUsageFlagBits.SHADER_DEVICE_ADDRESS_BIT.(u32)); @NoDisplay
 
 	samples: u32 = 1;
-	MaxBounceCount: u32 = 3;
-	RenderedFramesCount: u32;
+	maxBounceCount: u32 = 3;
+	renderedFramesCount: u32;
+	boxID: u32;
+}	
+
+Node :: struct {
+	min := Vector3.{FLOAT32_MAX, FLOAT32_MAX, FLOAT32_MAX};
+	max := Vector3.{-FLOAT32_MAX, -FLOAT32_MAX, -FLOAT32_MAX};
+
+	union {
+		leftNode: u32;
+		firstTriangleIndex: u32;
+	}
+	triangleCount: u32;
+}
+// WORKDS!
+
+trianglePositionBuffer: [..]Vector3;
+triangleIndexBuffer: [..]u32;
+bvh: [..]Node;
+nodesUsed: u32;
+
+UpdateNodeBounds :: (nodeIndex: u32) {
+    node := *bvh[nodeIndex];
+	i: u32;
+	while i < node.triangleCount {
+		index := node.firstTriangleIndex + i;
+		a := trianglePositionBuffer[triangleIndexBuffer[index + 0]];
+		b := trianglePositionBuffer[triangleIndexBuffer[index + 1]];
+		c := trianglePositionBuffer[triangleIndexBuffer[index + 2]];
+
+        node.min = min(node.min, a);
+        node.min = min(node.min, b);
+		node.min = min(node.min, c);
+        
+        node.max = max(node.max, a);
+		node.max = max(node.max, b);
+        node.max = max(node.max, c);
+		i += 3;
+    }
+}
+
+Subdivide :: (nodeIndex: u32) {
+    node := *bvh[nodeIndex];
+    if node.triangleCount <= 6 return;
+
+    extent := node.max - node.min;
+    axis: s32;
+    if extent.y > extent.x axis = 1;
+    if extent.z > extent.component[axis] axis = 2;
+    splitPos := node.min.component[axis] + extent.component[axis] * 0.5;
+	
+    i := node.firstTriangleIndex;
+    j := i + node.triangleCount - 3;
+    while i <= j {
+        a := trianglePositionBuffer[triangleIndexBuffer[i + 0]].component[axis];
+        b := trianglePositionBuffer[triangleIndexBuffer[i + 1]].component[axis];
+        c := trianglePositionBuffer[triangleIndexBuffer[i + 2]].component[axis];
+		if (a + b + c) / 3.0 < splitPos {
+			i += 3;
+		}
+        else {
+            swap(*triangleIndexBuffer[i + 0], *triangleIndexBuffer[j + 0]);
+            swap(*triangleIndexBuffer[i + 1], *triangleIndexBuffer[j + 1]);
+            swap(*triangleIndexBuffer[i + 2], *triangleIndexBuffer[j + 2]);
+			j -= 3;
+		}
+    }
+    leftCount := i - node.firstTriangleIndex;
+    if leftCount == 0 || leftCount == node.triangleCount { return; }
+
+	append(*bvh);
+    leftChildIdx := nodesUsed;
+	nodesUsed += 1;
+	
+	append(*bvh);
+    rightChildIdx := nodesUsed;
+	nodesUsed += 1;
+	//print("% %\n", nodesUsed, bvh.count);
+	
+    bvh[leftChildIdx].firstTriangleIndex = node.firstTriangleIndex;
+    bvh[leftChildIdx].triangleCount = leftCount;
+    bvh[rightChildIdx].firstTriangleIndex = i;
+    bvh[rightChildIdx].triangleCount = node.triangleCount - leftCount;
+    node.leftNode = leftChildIdx;
+    node.triangleCount = 0;
+
+    UpdateNodeBounds(leftChildIdx);
+    UpdateNodeBounds(rightChildIdx);
+
+    Subdivide(leftChildIdx);
+    Subdivide(rightChildIdx);
+}
+
+LoadModel :: (using renderer: *PathTracingRenderer) {
+	success, model := parse_obj_file("assets/models/campfire.obj");
+	if success {
+		for vertex : model.vertices {
+			append(*vertexBuffer.data, vertex.position);
+			append(*trianglePositionBuffer, vertex.position);
+		}
+
+		copy(*triangleIndexBuffer, model.indices);
+		append(*bvh);
+		bvh[0].triangleCount = xx triangleIndexBuffer.count;
+		nodesUsed += 1;
+		UpdateNodeBounds(0);
+		Subdivide(0);
+		copy(*indexBuffer.data, triangleIndexBuffer);
+
+		print("% %\n", nodesUsed, bvh.count);
+		
+		copy(*bvhBuffer.data, bvh);
+
+		free(trianglePositionBuffer);
+		free(triangleIndexBuffer);
+		//free(bvh);
+		free(model.vertices);
+    	free(model.indices);
+
+	}
+
+	BeginImmediateSumbit(vk.UploadCommandBuffer);
+		Update(*vertexBuffer, vk.UploadCommandBuffer);
+		Update(*indexBuffer, vk.UploadCommandBuffer);
+		Update(*bvhBuffer, vk.UploadCommandBuffer);
+		
+        SetObjectName(vertexBuffer.buffer.handle, "PathTracer.vertexBuffer");
+        SetObjectName(indexBuffer.buffer.handle, "PathTracer.indexBuffer");
+        SetObjectName(bvhBuffer.buffer.handle, "PathTracer.bvhBuffer");
+
+        SetObjectName(vertexBuffer.stagingBuffer.handle, "PathTracer.vertexBuffer");
+        SetObjectName(indexBuffer.stagingBuffer.handle, "PathTracer.indexBuffer");
+        SetObjectName(bvhBuffer.stagingBuffer.handle, "PathTracer.bvhBuffer");
+	EndImmediateSumbit(vk.UploadCommandBuffer);
 }
 
 Init :: (using renderer: *PathTracingRenderer) {
+	LoadModel(renderer);
+
 	{
 		push_allocator(temp);
 		defer reset_temporary_storage();
@@ -155,23 +305,24 @@ Init :: (using renderer: *PathTracingRenderer) {
 	}
 
 	Ground := PushMaterial(renderer);
-	Materials.data[Ground].albedo = .{0.8, 0.8, 0.0};
-	Materials.data[Ground].roughness = 1.0;
+	materials.data[Ground].albedo = .{0.8, 0.8, 0.0};
+	materials.data[Ground].roughness = 1.0;
 
 	Left := PushMaterial(renderer);
-	Materials.data[Left].emission = .{0.8, 0.8, 0.8} * 2.0;
+	materials.data[Left].emission = .{0.8, 0.8, 0.8} * 2.0;
 
 	Right := PushMaterial(renderer);
-	SetMetal(*Materials.data[Right], .{0.8, 0.6, 0.2}, 0.75, 0.02);
+	SetMetal(*materials.data[Right], .{0.8, 0.6, 0.2}, 0.75, 0.02);
 
 	glass := PushMaterial(renderer);
-	SetDielectric(*Materials.data[glass], .{0.0, 0.5, 1.0}, 0.07, 1.5);
+	SetDielectric(*materials.data[glass], .{0.0, 0.5, 1.0}, 0.07, 1.5);
 
 
-	append(*Spheres.data, .{.{0.0, 0.0, -1.0}, 0.5, glass});
-	append(*Spheres.data, .{.{-1.0, 0.0, -1.0}, 0.5, Left});
-	append(*Spheres.data, .{.{1.0, 0.0, -1.0}, 0.5, Right});
-	append(*Spheres.data, .{.{0.0, -100.5, -1.0}, 100.0, Ground});
+	append(*spheres.data, .{.{0.0, 0.0, -1.0}, 0.5, glass});
+	append(*spheres.data, .{.{-1.0, 0.0, -1.0}, 0.5, Left});
+	append(*spheres.data, .{.{1.0, 0.0, -1.0}, 0.5, Right});
+	append(*spheres.data, .{.{0.0, -100.5, -1.0}, 100.0, Ground});
+
 
 	UpdateMaterials(renderer);
 }
@@ -228,7 +379,7 @@ DestroyScreen :: (using renderer: *PathTracingRenderer) {
 Resize :: (using renderer: *PathTracingRenderer, size: Vector2) {
 	DestroyScreen(renderer);
 	CreateScreen(renderer, size);
-	RenderedFramesCount = 0;
+	renderedFramesCount = 0;
 }
 
 Render :: (using renderer: *PathTracingRenderer, camera: Camera) {
@@ -243,15 +394,19 @@ Render :: (using renderer: *PathTracingRenderer, camera: Camera) {
 	vkCmdBindDescriptorSets(cmd, .COMPUTE, pipeline.layout, 0, 1, *descriptorSet, 0, null);
 
 	sceneData = .{
-		SphereCount = xx Spheres.data.count,
+		sphereCount = xx spheres.data.count,
+
+		indexCount = xx indexBuffer.data.count,
+
 		inverseProjection = camera.inverseProjection,
 		inverseView = camera.inverseView,
 		position = camera.position,
-		Samples = samples,
-		MaxBounceCount = MaxBounceCount,
-		RenderedFramesCount = RenderedFramesCount,
+		samples = samples,
+		maxBounceCount = maxBounceCount,
+		renderedFramesCount = renderedFramesCount,
+		boxID = boxID,
 	};
-	RenderedFramesCount += 1;
+	renderedFramesCount += 1;
 
 	stagingBuffer: vk.Buffer;
 	AllocateStagingBuffer(*stagingBuffer, size_of(SceneData));
@@ -268,10 +423,18 @@ Render :: (using renderer: *PathTracingRenderer, camera: Camera) {
 		sdp: VkDeviceAddress;
 		mbp: VkDeviceAddress;
 		sphereBP: VkDeviceAddress;
+
+		vertexBP: VkDeviceAddress;
+		indexBP: VkDeviceAddress;
+		bvhBP: VkDeviceAddress;
 	};
 	data.sdp = GetDeviceAddress(sceneDataBuffer);
-	data.mbp = GetDeviceAddress(Materials.buffer);
-	data.sphereBP = GetDeviceAddress(Spheres.buffer);
+	data.mbp = GetDeviceAddress(materials.buffer);
+	data.sphereBP = GetDeviceAddress(spheres.buffer);
+
+	data.vertexBP = GetDeviceAddress(vertexBuffer.buffer);
+	data.indexBP = GetDeviceAddress(indexBuffer.buffer);
+	data.bvhBP = GetDeviceAddress(bvhBuffer.buffer);
 	
 	vkCmdPushConstants(cmd, pipeline.layout, .COMPUTE_BIT, 0, size_of(type_of(data)), *data);
 
@@ -285,14 +448,15 @@ Render :: (using renderer: *PathTracingRenderer, camera: Camera) {
 
 UpdateMaterials :: (using renderer: *PathTracingRenderer) {
 	BeginImmediateSumbit(vk.UploadCommandBuffer);
-		Update(*Materials, vk.UploadCommandBuffer);
-		Update(*Spheres, vk.UploadCommandBuffer);
-		
-        SetObjectName(Materials.buffer.handle, "PathTracer.Materials");
-        SetObjectName(Spheres.buffer.handle, "PathTracer.Spheres");
+		Update(*materials, vk.UploadCommandBuffer);
+		Update(*spheres, vk.UploadCommandBuffer);
 
-		SetObjectName(Materials.stagingBuffer.handle, "PathTracer.Materials");
-        SetObjectName(Spheres.stagingBuffer.handle, "PathTracer.Spheres");
+        SetObjectName(materials.buffer.handle, "PathTracer.Materials");
+        SetObjectName(spheres.buffer.handle, "PathTracer.Spheres");
+
+		SetObjectName(materials.stagingBuffer.handle, "PathTracer.materials");
+        SetObjectName(spheres.stagingBuffer.handle, "PathTracer.spheres");
+
 	EndImmediateSumbit(vk.UploadCommandBuffer);
 }
 
@@ -301,13 +465,18 @@ Deinit :: (using renderer: *PathTracingRenderer) {
 	Destroy(pipeline);
 	Destroy(*screenSampler);
 
-	Free(*Materials);
-	Free(*Spheres);
+	Free(*materials);
+	Free(*spheres);
+
+	Free(*vertexBuffer);
+	Free(*indexBuffer);
+	Free(*bvhBuffer);
+	
 	Free(*sceneDataBuffer);
 }
 
 PushMaterial :: (using renderer: *PathTracingRenderer) -> MaterialID {
-	append(*Materials.data);
+	append(*materials.data);
 
-	return xx (Materials.data.count - 1);
+	return xx (materials.data.count - 1);
 }
