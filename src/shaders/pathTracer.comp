@@ -15,7 +15,7 @@ struct SceneData {
     uint maxBounceCount;
     uint samples;
     uint sphereCount;
-    uint indexCount;
+    uint drawCommandCount;
     uint renderedFramesCount;
 
     uint boxID;
@@ -79,14 +79,19 @@ layout(buffer_reference, scalar) buffer VertexBufferPointer { vec3 vertices[]; }
 layout(buffer_reference, scalar) buffer IndexBufferPointer { uint indices[]; };
 layout(buffer_reference, scalar) buffer BVHBufferPointer { Node bvh[]; };
 
+struct DrawCommand {
+    VertexBufferPointer vertexBP;
+    IndexBufferPointer indexBP;
+    BVHBufferPointer bvhBP;
+    uint indexCount;
+};
+layout(buffer_reference, scalar) buffer DrawCommandPointer { DrawCommand drawCommands[]; };
+
 layout(push_constant) uniform Data {
     SceneDataPointer sdp;
     MaterialBufferPointer mbp;
     SphereBufferPointer sphereBP;
-
-    VertexBufferPointer vertexBP;
-    IndexBufferPointer indexBP;
-    BVHBufferPointer bvhBP;
+    DrawCommandPointer drawCommandBP;
 };
 
 vec2 rayBoxIntersect(Ray ray, vec3 bmin, vec3 bmax) {
@@ -154,81 +159,58 @@ HitInfo Intersect(Ray ray) {
         }
     }
 
-    /*vec2 bvhT = rayBoxIntersect(ray, bvhBP.bvh[sdp.sceneData.boxID].min, bvhBP.bvh[sdp.sceneData.boxID].max);
-    if (bvhT.x <= bvhT.y && bvhT.y > 0.0 && bvhT.x < rec.t) {
-        #if 0
-        for (int i = 0; i < sdp.sceneData.indexCount; i += 3) {
-            vec3 a = vertexBP.vertices[indexBP.indices[i + 0]];
-            vec3 b = vertexBP.vertices[indexBP.indices[i + 1]];
-            vec3 c = vertexBP.vertices[indexBP.indices[i + 2]];
-            vec3 tempRec = rayTriangleIntersect(ray, a, b, c); 
-            if (tempRec.x != -1.0 && tempRec.x < rec.t) {
-                rec.t = tempRec.x;
-                rec.normal = normalize(cross(b - a, c - a));
-                rec.hit = true;
-                rec.material = 0;
-            }
-        }
-        #else
-        rec.t = bvhT.x;
-        rec.normal = vec3(0.0, 1.0, 0.0);
-        rec.hit = true;
-        rec.material = 0;
-        #endif
-    }*/
-
-    // BVH traversal
     uint nodeStack[32];
-    int stackIndex = 0;
-    nodeStack[stackIndex++] = 0; // Start with root node index
+    for (int i = 0; i < sdp.sceneData.drawCommandCount; i++) {
+        DrawCommand drawCommand = drawCommandBP.drawCommands[i];
+        int stackIndex = 0;
+        nodeStack[stackIndex++] = 0;
 
-    while(stackIndex > 0) {
-        uint nodeIdx = nodeStack[--stackIndex];
-        Node node = bvhBP.bvh[nodeIdx];
-        
-        // AABB intersection test with early rejection
-        vec2 bvhT = rayBoxIntersect(ray, node.min, node.max);
-        if (!(bvhT.x <= bvhT.y && bvhT.y > 0.0 && bvhT.x < rec.t)) {
-            continue; // Skip this node entirely
-        }
-        
-        if (node.triangleCount > 0) {
-            for (uint i = 0; i < node.triangleCount; i += 3) {
-                vec3 a = vertexBP.vertices[indexBP.indices[i + node.leftNodeOrTriangleIndex + 0]];
-                vec3 b = vertexBP.vertices[indexBP.indices[i + node.leftNodeOrTriangleIndex + 1]];
-                vec3 c = vertexBP.vertices[indexBP.indices[i + node.leftNodeOrTriangleIndex + 2]];
+        while(stackIndex > 0) {
+            uint nodeIdx = nodeStack[--stackIndex];
+            Node node = drawCommand.bvhBP.bvh[nodeIdx];
+            
+            vec2 bvhT = rayBoxIntersect(ray, node.min, node.max);
+            if (bvhT.x > bvhT.y || bvhT.y < 0.0 || bvhT.x > rec.t) continue; 
+            
+            if (node.triangleCount > 0) {
+                for (uint i = 0; i < node.triangleCount; i += 3) {
+                    vec3 a = drawCommand.vertexBP.vertices[drawCommand.indexBP.indices[i + node.leftNodeOrTriangleIndex + 0]];
+                    vec3 b = drawCommand.vertexBP.vertices[drawCommand.indexBP.indices[i + node.leftNodeOrTriangleIndex + 1]];
+                    vec3 c = drawCommand.vertexBP.vertices[drawCommand.indexBP.indices[i + node.leftNodeOrTriangleIndex + 2]];
+                    
+                    vec3 tempRec = rayTriangleIntersect(ray, a, b, c); 
+                    if (tempRec.x != -1.0 && tempRec.x < rec.t) {
+                        rec.t = tempRec.x;
+                        rec.normal = normalize(cross(b - a, c - a)); // @NOTE: This is slow
+                        rec.hit = true;
+                        rec.material = 0;
+                    }
+                }
+            }
+            else {
+                uint leftChild = node.leftNodeOrTriangleIndex;
+                uint rightChild = leftChild + 1;
                 
-                vec3 tempRec = rayTriangleIntersect(ray, a, b, c); 
-                if (tempRec.x != -1.0 && tempRec.x < rec.t) {
-                    rec.t = tempRec.x;
-                    rec.normal = normalize(cross(b - a, c - a));
-                    rec.hit = true;
-                    rec.material = 0;
+                Node leftNode = drawCommand.bvhBP.bvh[leftChild];
+                Node rightNode = drawCommand.bvhBP.bvh[rightChild];
+                
+                vec2 leftT  = rayBoxIntersect(ray, leftNode.min,  leftNode.max);
+                vec2 rightT = rayBoxIntersect(ray, rightNode.min, rightNode.max);
+                
+                float leftDist =  (leftT.x  > 0.0) ? leftT.x  : leftT.y;
+                float rightDist = (rightT.x > 0.0) ? rightT.x : rightT.y;
+                
+                if (leftDist < rightDist) {
+                    nodeStack[stackIndex++] = rightChild;
+                    nodeStack[stackIndex++] = leftChild;
+                } else {
+                    nodeStack[stackIndex++] = leftChild;
+                    nodeStack[stackIndex++] = rightChild;
                 }
             }
         }
-        else {
-            uint leftChild = node.leftNodeOrTriangleIndex;
-            uint rightChild = leftChild + 1;
-            
-            Node leftNode = bvhBP.bvh[leftChild];
-            Node rightNode = bvhBP.bvh[rightChild];
-            
-            vec2 leftT = rayBoxIntersect(ray, leftNode.min, leftNode.max);
-            vec2 rightT = rayBoxIntersect(ray, rightNode.min, rightNode.max);
-            
-            float leftDist = (leftT.x > 0.0) ? leftT.x : leftT.y;
-            float rightDist = (rightT.x > 0.0) ? rightT.x : rightT.y;
-            
-            if (leftDist < rightDist) {
-                nodeStack[stackIndex++] = rightChild;
-                nodeStack[stackIndex++] = leftChild;
-            } else {
-                nodeStack[stackIndex++] = leftChild;
-                nodeStack[stackIndex++] = rightChild;
-            }
-        }
     }
+
     
     if (rec.hit) {
         rec.p = ray.origin + rec.t * ray.direction;

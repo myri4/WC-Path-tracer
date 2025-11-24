@@ -2,7 +2,6 @@ LineVertex :: struct {
 	Position: Vector3;
 
 	Color: Vector4;
-	//EntityID: u64;
 }
 
 RenderData :: struct {
@@ -37,30 +36,31 @@ DrawLineQuad :: (using renderData: *RenderData, transform: Matrix4, color := Vec
 
 DrawLineCube :: (using renderData: *RenderData, min: Vector3, max: Vector3, color := Vector4.{1.0, 1.0, 1.0, 1.0}) {
     vertices := Vector3.[
-        .{min.x, min.y, min.z},
-        .{max.x, min.y, min.z},
-        .{min.x, max.y, min.z},
-        .{min.x, min.y, max.z},
-        .{max.x, max.y, min.z},
-        .{min.x, max.y, max.z},
-        .{max.x, max.y, max.z},
-        .{max.x, min.y, max.z},
+        .{min.x, min.y, min.z}, // 0: 0 0 0
+        .{max.x, min.y, min.z}, // 1: 1 0 0 
+        .{min.x, max.y, min.z}, // 2: 0 1 0
+        .{min.x, min.y, max.z}, // 3: 0 0 1
+        .{max.x, max.y, min.z}, // 4: 1 1 0
+        .{min.x, max.y, max.z}, // 5: 0 1 1
+        .{max.x, min.y, max.z}, // 6: 1 0 1
+        .{max.x, max.y, max.z}, // 7: 1 1 1
     ];
     
     inline DrawLine(renderData, vertices[0], vertices[1], color);
-    inline DrawLine(renderData, vertices[1], vertices[2], color);
-    inline DrawLine(renderData, vertices[2], vertices[3], color);
-    inline DrawLine(renderData, vertices[3], vertices[0], color);
-    
-    inline DrawLine(renderData, vertices[4], vertices[5], color);
-    inline DrawLine(renderData, vertices[5], vertices[6], color);
-    inline DrawLine(renderData, vertices[6], vertices[7], color);
+    inline DrawLine(renderData, vertices[0], vertices[2], color);
+    inline DrawLine(renderData, vertices[0], vertices[3], color);
+
+    inline DrawLine(renderData, vertices[1], vertices[4], color);
+    inline DrawLine(renderData, vertices[3], vertices[5], color);
+
+    inline DrawLine(renderData, vertices[1], vertices[6], color);
+    inline DrawLine(renderData, vertices[3], vertices[6], color);
+    inline DrawLine(renderData, vertices[7], vertices[6], color);
+
+    inline DrawLine(renderData, vertices[2], vertices[4], color);
+    inline DrawLine(renderData, vertices[2], vertices[5], color);
     inline DrawLine(renderData, vertices[7], vertices[4], color);
-    
-    inline DrawLine(renderData, vertices[0], vertices[4], color);
-    inline DrawLine(renderData, vertices[1], vertices[5], color);
-    inline DrawLine(renderData, vertices[2], vertices[6], color);
-    inline DrawLine(renderData, vertices[3], vertices[7], color);
+    inline DrawLine(renderData, vertices[7], vertices[5], color);
 }
 
 DrawLine :: (using renderData: *RenderData, start: Vector3, end: Vector3, startColor: Vector4, endColor: Vector4) { array_add(*LineVertexBuffer.data, .{start, startColor}, .{end, endColor}); }

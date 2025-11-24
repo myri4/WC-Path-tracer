@@ -43,9 +43,8 @@ SceneData :: struct {
 	maxBounceCount: u32 = 3;
 	samples: u32 = 1;
 	sphereCount: u32;
+	drawCommandCount: u32;
 
-	indexCount: u32;
-	
 	renderedFramesCount: u32;
 
 	boxID: u32;
@@ -113,8 +112,9 @@ PathTracingRenderer :: struct {
 
 	vertexBuffer: DBufferManager(Vector3, VkBufferUsageFlagBits.SHADER_DEVICE_ADDRESS_BIT.(u32)); @NoDisplay
 	indexBuffer: DBufferManager(u32, VkBufferUsageFlagBits.SHADER_DEVICE_ADDRESS_BIT.(u32)); @NoDisplay
-
 	bvhBuffer: DBufferManager(Node, VkBufferUsageFlagBits.SHADER_DEVICE_ADDRESS_BIT.(u32)); @NoDisplay
+
+	drawCommandBuffer: DBufferManager(DrawCommand, VkBufferUsageFlagBits.SHADER_DEVICE_ADDRESS_BIT.(u32)); @NoDisplay
 
 	samples: u32 = 1;
 	maxBounceCount: u32 = 3;
@@ -132,7 +132,12 @@ Node :: struct {
 	}
 	triangleCount: u32;
 }
-// WORKDS!
+DrawCommand :: struct {
+    vertexBuffer: VkDeviceAddress;
+    indexBuffer: VkDeviceAddress;
+    bvhBuffer: VkDeviceAddress;
+    indexCount: u32;
+}
 
 trianglePositionBuffer: [..]Vector3;
 triangleIndexBuffer: [..]u32;
@@ -159,9 +164,9 @@ UpdateNodeBounds :: (nodeIndex: u32) {
     }
 }
 
-Subdivide :: (nodeIndex: u32) {
+Subdivide :: (nodeIndex: u32, depth: u32 = 32) {
     node := *bvh[nodeIndex];
-    if node.triangleCount <= 6 return;
+    if node.triangleCount <= 6 || depth == 0 return;
 
     extent := node.max - node.min;
     axis: s32;
@@ -207,12 +212,12 @@ Subdivide :: (nodeIndex: u32) {
     UpdateNodeBounds(leftChildIdx);
     UpdateNodeBounds(rightChildIdx);
 
-    Subdivide(leftChildIdx);
-    Subdivide(rightChildIdx);
+    Subdivide(leftChildIdx, depth - 1);
+    Subdivide(rightChildIdx, depth - 1);
 }
 
 LoadModel :: (using renderer: *PathTracingRenderer) {
-	success, model := parse_obj_file("assets/models/campfire.obj");
+	success, model := parse_obj_file("assets/models/mushroom.obj");
 	if success {
 		for vertex : model.vertices {
 			append(*vertexBuffer.data, vertex.position);
@@ -233,24 +238,34 @@ LoadModel :: (using renderer: *PathTracingRenderer) {
 
 		free(trianglePositionBuffer);
 		free(triangleIndexBuffer);
-		//free(bvh);
 		free(model.vertices);
     	free(model.indices);
-
 	}
 
+	
 	BeginImmediateSumbit(vk.UploadCommandBuffer);
 		Update(*vertexBuffer, vk.UploadCommandBuffer);
 		Update(*indexBuffer, vk.UploadCommandBuffer);
 		Update(*bvhBuffer, vk.UploadCommandBuffer);
+
+		append(*drawCommandBuffer.data, .{
+			vertexBuffer = GetDeviceAddress(vertexBuffer.buffer),
+			indexBuffer = GetDeviceAddress(indexBuffer.buffer),
+			bvhBuffer = GetDeviceAddress(bvhBuffer.buffer),
+			indexCount = xx triangleIndexBuffer.count
+		});
+		Update(*drawCommandBuffer, vk.UploadCommandBuffer);
+
 		
         SetObjectName(vertexBuffer.buffer.handle, "PathTracer.vertexBuffer");
         SetObjectName(indexBuffer.buffer.handle, "PathTracer.indexBuffer");
         SetObjectName(bvhBuffer.buffer.handle, "PathTracer.bvhBuffer");
+        SetObjectName(drawCommandBuffer.buffer.handle, "PathTracer.drawCommandBuffer");
 
         SetObjectName(vertexBuffer.stagingBuffer.handle, "PathTracer.vertexBuffer");
         SetObjectName(indexBuffer.stagingBuffer.handle, "PathTracer.indexBuffer");
         SetObjectName(bvhBuffer.stagingBuffer.handle, "PathTracer.bvhBuffer");
+        SetObjectName(drawCommandBuffer.stagingBuffer.handle, "PathTracer.drawCommandBuffer");
 	EndImmediateSumbit(vk.UploadCommandBuffer);
 }
 
@@ -304,6 +319,7 @@ Init :: (using renderer: *PathTracingRenderer) {
 		vk.SetObjectName(sceneDataBuffer.handle, "SceneDataBuffer");
 	}
 
+	glass := PushMaterial(renderer);
 	Ground := PushMaterial(renderer);
 	materials.data[Ground].albedo = .{0.8, 0.8, 0.0};
 	materials.data[Ground].roughness = 1.0;
@@ -314,7 +330,6 @@ Init :: (using renderer: *PathTracingRenderer) {
 	Right := PushMaterial(renderer);
 	SetMetal(*materials.data[Right], .{0.8, 0.6, 0.2}, 0.75, 0.02);
 
-	glass := PushMaterial(renderer);
 	SetDielectric(*materials.data[glass], .{0.0, 0.5, 1.0}, 0.07, 1.5);
 
 
@@ -326,7 +341,6 @@ Init :: (using renderer: *PathTracingRenderer) {
 
 	UpdateMaterials(renderer);
 }
-
 
 CreateScreen :: (using renderer: *PathTracingRenderer, size: Vector2) {
 	renderSize = size;
@@ -396,7 +410,7 @@ Render :: (using renderer: *PathTracingRenderer, camera: Camera) {
 	sceneData = .{
 		sphereCount = xx spheres.data.count,
 
-		indexCount = xx indexBuffer.data.count,
+		drawCommandCount = xx drawCommandBuffer.data.count,
 
 		inverseProjection = camera.inverseProjection,
 		inverseView = camera.inverseView,
@@ -424,17 +438,13 @@ Render :: (using renderer: *PathTracingRenderer, camera: Camera) {
 		mbp: VkDeviceAddress;
 		sphereBP: VkDeviceAddress;
 
-		vertexBP: VkDeviceAddress;
-		indexBP: VkDeviceAddress;
-		bvhBP: VkDeviceAddress;
+		drawCommandBP: VkDeviceAddress;
 	};
 	data.sdp = GetDeviceAddress(sceneDataBuffer);
 	data.mbp = GetDeviceAddress(materials.buffer);
 	data.sphereBP = GetDeviceAddress(spheres.buffer);
 
-	data.vertexBP = GetDeviceAddress(vertexBuffer.buffer);
-	data.indexBP = GetDeviceAddress(indexBuffer.buffer);
-	data.bvhBP = GetDeviceAddress(bvhBuffer.buffer);
+	data.drawCommandBP = GetDeviceAddress(drawCommandBuffer.buffer);
 	
 	vkCmdPushConstants(cmd, pipeline.layout, .COMPUTE_BIT, 0, size_of(type_of(data)), *data);
 
@@ -471,6 +481,8 @@ Deinit :: (using renderer: *PathTracingRenderer) {
 	Free(*vertexBuffer);
 	Free(*indexBuffer);
 	Free(*bvhBuffer);
+
+	free(bvh);
 	
 	Free(*sceneDataBuffer);
 }

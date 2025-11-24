@@ -283,7 +283,7 @@ Flush :: (using,except(cmd) renderer: *Renderer2D, using renderData: *RenderData
 	};
 
 	m_data.ViewProj = viewProj;
-	UploadLineVertexData(renderData);
+	if LineVertexBuffer.data.count UploadLineVertexData(renderData);
 
 	m_data.vertexBuffer = GetDeviceAddress(LineVertexBuffer.buffer);
 

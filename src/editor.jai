@@ -62,6 +62,8 @@ InitEditor :: () {
 	Init(*renderer2D);
 	CreateScreen(*pathTracer, GetWindowSize());
 	CreateScreen(*renderer2D, GetWindowSize());
+	for * rd : renderData
+		DrawLine(rd, .{}, .{});
 }
 
 ResizeEditor :: (size: Vector2) {
@@ -77,6 +79,8 @@ ResizeEditor :: (size: Vector2) {
 DeinitEditor :: () {
 	Deinit(*pathTracer);
 	Deinit(*renderer2D);
+
+	for * rd : renderData Free(rd);
 }
 
 
@@ -155,8 +159,8 @@ UpdateEditor :: () {
 	rd := *renderData[vk.CURRENT_FRAME_INDEX];
 
 	for box : bvh {
-		if it_index > 50 break;
-
+		//if it_index > pathTracer.sceneData.boxID break;
+		if box.triangleCount == 0 continue;
 		DrawLineCube(rd, box.min, box.max);
 	}
 
@@ -164,6 +168,7 @@ UpdateEditor :: () {
 	proj._22 *= -1.0;
 
 	Flush(*renderer2D, rd, camera.view * proj);
+	Reset(rd);
 }
 
 UI_SceneViewer :: () {
