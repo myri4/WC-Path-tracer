@@ -156,7 +156,7 @@ UpdateEditor :: () {
 	Update(*camera, ViewPortSize.x / ViewPortSize.y);
 	UpdateMaterials(*pathTracer);
 	Render(*pathTracer, camera);
-	rd := *renderData[vk.CURRENT_FRAME_INDEX];
+	/*rd := *renderData[vk.CURRENT_FRAME_INDEX];
 
 	for box : bvh {
 		//if it_index > pathTracer.sceneData.boxID break;
@@ -168,7 +168,7 @@ UpdateEditor :: () {
 	proj._22 *= -1.0;
 
 	Flush(*renderer2D, rd, camera.view * proj);
-	Reset(rd);
+	Reset(rd)*/
 }
 
 UI_SceneViewer :: () {
@@ -191,7 +191,7 @@ UI_SceneViewer :: () {
 		RenderSize := WindowPos + availSize;
 
 		GetWindowDrawList().AddImage(GetWindowDrawList(), .{_TexID = xx pathTracer.ImguiImageID}, WindowPos, RenderSize);
-		GetWindowDrawList().AddImage(GetWindowDrawList(), .{_TexID = xx renderer2D.imguiImageID}, WindowPos, RenderSize);
+		//GetWindowDrawList().AddImage(GetWindowDrawList(), .{_TexID = xx renderer2D.imguiImageID}, WindowPos, RenderSize);
 
         projection := camera.projection;
 

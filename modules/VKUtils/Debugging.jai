@@ -105,5 +105,8 @@ else
 
 SetObjectName :: (handle: $T, name: string) // @NOTE: If handle is some kind of pointer the function fails.
 { 
-	SetObjectNameT(get_vulkan_object_type(type_of(handle)), handle, name); 
+    #if GRAPHICS_VALIDATION {
+        
+	    SetObjectNameT(get_vulkan_object_type(type_of(handle)), handle, name); 
+    }
 }

@@ -481,6 +481,8 @@ Deinit :: (using renderer: *PathTracingRenderer) {
 	Free(*vertexBuffer);
 	Free(*indexBuffer);
 	Free(*bvhBuffer);
+	
+	Free(*drawCommandBuffer);
 
 	free(bvh);
 	
